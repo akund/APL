@@ -5,7 +5,7 @@ COPYRIGHT (C) 2020 Adrian Kundert
 
 # Introduction:
 
-The APL development begun with an hobbyst project having as goal to design a single board computer with audio-video and PS/2 keyboard interfaces. Such open source implementations are already realized by other ATMEL programmers like Nick Gammon and Sandro Maffiodo. Since every design is a resource tradeoff and my features priorization were different I came out with a different implementation. Indeed the VGA resolution was important but I wanted to keep the UART port available for communication and also use as less as possible RAM. For this I had to store the data in the PGM memory and trade the color to monochrome because reading from RAM is slower.
+The APL development begun with an hobbyst project having as goal to design a single board computer with audio-video and PS/2 keyboard interfaces. Such open source implementations are already realized by other ATMEL programmers like [Nick Gammon](http://www.gammon.com.au/) and [Sandro Maffiodo](https://github.com/smaffer). Since every design is a resource tradeoff and my features priorization were different I came out with a different implementation. Indeed the VGA resolution was important but I wanted to keep the UART port available for communication and also use as less as possible RAM. For this I had to store the data in the PGM memory and trade the color to monochrome because reading from RAM is slower.
 
 # Features Overview:
 
