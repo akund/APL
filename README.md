@@ -28,18 +28,18 @@ The APL is designed for Arduino software development environement. The hardware 
 
 # Demo
 
-## Font
+## Font (character mode)
 
 ![font demo](doc/screen-font.jpg)
 
-## Graph demo
+## Pong (graphic mode)
 
 [<img width='40%' src='doc/logo.jpg'/>](https://www.youtube.com/watch?v=c0AHMCGUVl8)
 [<img width='50%' src='doc/pong.jpg'/>](https://www.youtube.com/watch?v=c0AHMCGUVl8)
 
 # Hardware Configuration
 
-## Uno/Nano board configuration (16 Mhz)
+## Arduino Uno/Nano board configuration (16 MHz)
 
 ![uno](doc/uno.png)
 
