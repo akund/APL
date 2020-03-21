@@ -14,7 +14,7 @@ The APL development begun with an hobbyst project having as goal to design a sin
 - Tile size 6 px by 8 px (character mode) or by 10 px by 10 px (graphic mode)
 - Fast screen scrolling by tile index
 - Optional hardware pixel multiplexer to increase the resolution (3 clocks / pixel)
-- PS/2 keyboard support
+- [PS/2 keyboard](https://www.arduinolibraries.info/libraries/ps2-keyboard) support
 - Sound Tone from 45 Hz to 12 KHz
 - SD card interface (TBD)
 
