@@ -11,7 +11,7 @@ The APL development begun with an hobbyst project having as goal to design a sin
 
 - Timer Interrupt based implementation (execution not impacted by the main loop)
 - Low RAM footprint by tile rendering from PGM memory (4 clocks / pixel)
-- Tile size 6 px by 8 px (character mode) or by 10 px by 10 px (graphic mode)
+- Tile size is 6 px by 8 px (character mode) or 10 px by 10 px (graphic mode)
 - Fast screen scrolling by tile index
 - Optional hardware pixel multiplexer to increase the resolution (3 clocks / pixel)
 - [PS/2 keyboard](https://www.arduinolibraries.info/libraries/ps2-keyboard) support
