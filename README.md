@@ -43,13 +43,11 @@ The APL is designed for Arduino software development environement. The hardware 
 
 ![uno](doc/uno.png)
 
-## Possibility to increase the system clock to 20 MHz and even more
-
-### Bread board configuration (custom system clock)
+### Bread board configuration (system clock up to 20 MHz and even more)
 
 ![uno](doc/schema_APL_without_mux.png)
 
-### Hardware pixel multiplexer (custom system clock)
+### Hardware pixel multiplexer (system clock up to 20 MHz and even more)
 
 ![uno](doc/schema_APL_with_mux.png)
 
@@ -58,4 +56,8 @@ The APL is designed for Arduino software development environement. The hardware 
 1. Import the APL library in your Arduino library folder: menu Sketch -> Include library -> add .ZIP Library
 2. Open the demo application "Font" or "Pong" with Arduino IDE
 3. (if required) in APLcore.h change the sys clock and Pixel_Mux definition
+
+	//uncomment ATMEGA2560_MAXRES to use 120x240px rectangular pixels
+	//#define ATMEGA2560_MAXRES
+  
 4. Verify and Program your device
