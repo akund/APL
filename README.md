@@ -58,6 +58,7 @@ The APL is designed for Arduino software development environement. The hardware 
 3. (if required) in APLcore.h change the sys clock and Pixel_Mux definition:
 
 	F_CPU 16000000UL  // system clock
+	
 	#define PIXEL_HW_MUX      // enable this define when Pixel Hardware Mux is used
 	
 4. Verify and Program your device
