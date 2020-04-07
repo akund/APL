@@ -20,11 +20,13 @@ The APL development begun with an hobbyst project having as goal to design a sin
 
 The APL is designed for Arduino software development environement. The hardware configuration is flexible from standart board like Arduino Uno or Nano, but can also be customized with an higher system clock for better performance. Additionally, an external pixel multiplexer circuit can be added to increase even more the pixel resolution.
 
+The value(s) in the [ ] is with the pixel multiplexer.
+
 | Configuration | Tile Resolution in Character mode | Tile Resolution in Graphic mode | Pixel Resolution (width by height) |
 | --- | --- | --- | --- |
-| 16 MHz (Uno/Nano) | 11 (15) | 8 (11) | 64x160 (88x160) |
-| 24 MHz | 22 (29) | 16 (21) | 128x160 (168x160) |
-| 32 MHz (experimental) | 31 (42) |  21 (31) | 168x160 (248x160) |
+| 16 MHz (Uno/Nano) | 11 [15] | 8 [11] | 64x160 [88x160] |
+| 24 MHz | 22 [29] | 16 [21] | 128x160 [168x160] |
+| 32 MHz (experimental) | 31 [42] |  21 [31] | 168x160 [248x160] |
 
 # Demo
 
