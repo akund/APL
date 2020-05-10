@@ -18,13 +18,21 @@
 
 #include <APLcore.h>
 
-APLcore* pAPL = 0;
+APLcore* pAPL = NULL;
 
 void setup() {
   
   pAPL = APLcore::instance();  
   pAPL->coreInit();
-
+  pAPL->setTextMode();
+#ifdef PIXEL_HW_MUX
+  //pAPL->setColor(RED|BLUE);
+  pAPL->setColor(GREEN|BLUE); //color cyan
+  //pAPL->setColor(WHITE);
+#else
+  pAPL->setColor(BLUE);
+#endif
+  
   for (byte y=0; y<pAPL->getscrViewHeightInTile(); y++) {
       for (byte x=0; x<pAPL->getscrViewWidthInTile(); x++) {
         pAPL->setTileXYtext(x, y, '0'+y+x); // write the pattern from '0'

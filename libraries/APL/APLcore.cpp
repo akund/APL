@@ -31,15 +31,14 @@ const unsigned int totalLines = verticalBackPorchLines + activeLines + verticalF
 volatile unsigned int vLineActive = activeLines;
 volatile byte xScroll = 0, yScroll = 0; // x scrolling, value between 0 and 6, y between 0 and 7
 enum VGAmode {textMode = 0, graphMode = 1};
-volatile VGAmode mode = textMode;
+volatile VGAmode mode;
+volatile byte MemWidth;
 
 // Audio variable
 volatile byte* soundbufptr = NULL;
 
 // PS2 keyboard instantiation
 PS2Keyboard kbd;
-volatile unsigned int bitStream=0;
-volatile byte bitCount = 0;
 		
 // UART ringbuffer (DO NOT USE ANY OTHER UART LIB TO AVOID INTERRUPT CONFLICT)
 RingBuffer txbuffer, rxbuffer;
@@ -57,15 +56,17 @@ ISR (TIMER1_OVF_vect) {
   // reference https://github.com/cnlohr/avrcraft/blob/master/terminal/ntsc.c
   // code source https://github.com/smaffer/vgax/blob/master/VGAX.cpp   
   asm volatile(
+    "     clr r27               \n\t" //
     "     lds r26, %[timer0]    \n\t" //
-    "     andi r26, 3          \n\t" //
+    "     andi r26, 3           \n\t" //
     "     call TL               \n\t" //
     "TL:                        \n\t" //
-    "     pop r31               \n\t" //
-    "     pop r30               \n\t" //
-    "     adiw Z, 5+0           \n\t" // 5 cycles for the previous instructions + offset tuning (0, 1 or 2)
-    "     add r30, r26          \n\t" //
-    "     ijmp                  \n\t" //    
+    "     pop r31               \n\t" // 1 word
+    "     pop r30               \n\t" // 1 word
+    "     adiw Z, 6+0           \n\t" // 1 word, total 6 words for the previous instructions + offset tuning (0, 1 or 2)
+    "     add r30, r26          \n\t" // 1 word
+    "     adc r31, r27          \n\t" // 1 word
+    "     ijmp                  \n\t" // 1 word   
     ".rept 3+0                  \n\t" // between 3 and 3+offset
     "     nop                   \n\t" //     
     ".endr                      \n\t" //
@@ -81,89 +82,90 @@ ISR (TIMER1_OVF_vect) {
     vLine++;
     // the tile line is repeated HeightScaling    
     register unsigned int TileIndex = (pixLine / TileMemHeight) * (unsigned int)scrBufWidthInTile; 
-    register byte TilePixOffset = (pixLine & (TileMemHeight-1)) * TileMemWidth;
+    register byte TilePixOffset = (pixLine & (TileMemHeight-1)) * MemWidth;
     
 #ifdef PIXEL_HW_MUX
 		// blit pixel data to screen in HW mux (6 clock / 2 pix)
     asm volatile (            
+       #if F_CPU == 32000000UL
+        ".rept 16  \n\t" // porch delay
+			"nop     \n\t"
+		".endr     \n\t"
+      #endif
       "push XL \n\t" "push XH \n\t" "push r28 \n\t" "push r29 \n\t" "push ZL \n\t" "push ZH \n\t"        
         "push r0 \n\t" "push r1 \n\t"           // save used registers (the compiler does not consider this code)
 
-      "clr r0 \n\t" "cp r0, %3 \n\t" "breq TEXT_MODE \n\t" "rjmp GRAPH_MODE \n\t"
+      "clr r1 \n\t" "cp r1, %3 \n\t" "breq TEXT_MODE \n\t" "rjmp GRAPH_MODE \n\t"
 
-      //------------------------------ TEXT MODE: render the ascii character without x scrolling -----------------------------------------------------//
+      //--best mono 6clk/2px, then color 8clk/2px (resolution equal to mono 4 pix no mux)  -------------------------- TEXT MODE: render the ascii character without x scrolling -----------------------------------------------------//
       "TEXT_MODE: \n\t" 
+  	    "sbi 0x05, 0 \n\t"                            // 2      the SBI enables the pixelMux, critical timing set just before the out instruction or 6*n cycles earlier
         "ld ZL, X+ \n\t" "ld ZH, X+ \n\t"             // 2+2    load the value end of the line
-        "ldi r28, 4 \n\t" "ldi r29, 0 \n\t"           // 1+1
-        "add ZL, %1 \n\t" "adc ZH, r29 \n\t"          // 1+1
-        "sbi 0x05, 0 \n\t"                            // 2      the SBI enables the pixelMux, critical timing set just before the out instruction or 6*n cycles earlier
-
+        "nop \n\t"                                    // 1
+        "add ZL, %1 \n\t" "adc ZH, r1 \n\t"           // 1+1
+  
       #if F_CPU == 32000000UL
-        ".rept 12  \n\t" // porch delay
-					"nop     \n\t"
-				".endr     \n\t"
-				".rept 42 \n\t" 
-      #elif F_CPU == 24000000UL
-        ".rept 29 \n\t" 
-      #elif F_CPU == 20000000UL
-        ".rept ?? \n\t"
-      #else // Arduino default 16 MHz
-        ".rept 15 \n\t"
-      #endif
-                                                          "lpm r0, Z \n\t"                                      //     3
-          "out 0x0b, r0 \n\t" "mul r28, r0 \n\t"          "nop \n\t" "ld ZL, X+ \n\t"                           // 1+2+1+2  
-          "out 0x0b, r0 \n\t" "mul r28, r0 \n\t"          "nop \n\t" "ld ZH, X+ \n\t"                           // 1+2+1+2
-          "out 0x0b, r0 \n\t" "add ZL, %1 \n\t" "adc ZH, r29 \n\t"                                              // 1+1+1
-        ".endr    \n\t"                                         
-        "rjmp PGM_RAM_end \n\t" 
-
-      //------------------------------ GRAPH MODE: render the Tiles without x scrolling -----------------------------------------------------//
-      "GRAPH_MODE: \n\t" 
-        "ld ZL, X+ \n\t" "ld ZH, X+ \n\t"             // 2+2    load the value end of the line
-        "sbi 0x05, 0 \n\t"                            // 2      the SBI enables the pixelMux, critical timing set just before the out instruction or 6*n cycles earlier
-        "ldi r28, 4 \n\t" "ldi r29, 0 \n\t"           // 1+1
-        "add ZL, %1 \n\t" "adc ZH, r29 \n\t"          // 1+1
-        "cp ZH, %2 \n\t" "brlo .+34 \n\t"             // 1+1(2)
-
-      #if F_CPU == 32000000UL
-        ".rept 12  \n\t" // porch delay
-					"nop     \n\t"    
-				".endr     \n\t"
-				".rept 31 \n\t" 
+		".rept 31 \n\t" 
       #elif F_CPU == 24000000UL
         ".rept 21 \n\t" 
       #elif F_CPU == 20000000UL
         ".rept ?? \n\t"
-      #else   // Arduino default 16 MHz
+      #else // Arduino default 16 MHz
         ".rept 11 \n\t"
       #endif
-          //"PGM_n: \n\t" // (code size 17 words)        
-                                                          "lpm r0, Z \n\t"                                      //     3
-          "out 0x0b, r0 \n\t" "mul r28, r0 \n\t"          "nop \n\t" "ld ZL, X+ \n\t"                           // 1+2+1+2  
-          "out 0x0b, r0 \n\t" "mul r28, r0 \n\t"          "nop \n\t" "ld ZH, X+ \n\t"                           // 1+2+1+2
-          "out 0x0b, r0 \n\t" "mul r28, r0 \n\t"          "add ZL, %1 \n\t" "adc ZH, r29 \n\t" "cp ZH, %2 \n\t" // 1+2+1+1+1
-          "out 0x0b, r0 \n\t" "brsh .+36 \n\t" "rjmp .+68 \n\t"                                                 // 1+1(2)+2    
+                                        "lpm r0, Z+ \n\t"                          "nop \n\t"        "nop \n\t"          //     3+1+1
+          "out 0x0b, r0 \n\t" "lpm r0, Z+ \n\t" "ld YL, X+ \n\t"                   "ld YH, X+ \n\t"                      // 1+3+2+2
+          "out 0x0b, r0 \n\t" "lpm r0, Z+ \n\t" "nop \n\t"       "add YL, %1 \n\t" "adc YH,r1\n\t"  "movw Z,Y \n\t"      // 1+3+1+1+1+1
+          "out 0x0b, r0 \n\t" "nop \n\t" "nop \n\t"                                                                      // 1+1+1
+        ".endr    \n\t"                                         
+        "rjmp PGM_RAM_end \n\t" 
+
+      //-best color 8clk/2pix ----------------------------- GRAPH MODE: render the Tiles without x scrolling -----------------------------------------------------//
+      "GRAPH_MODE: \n\t" 
+        "ld ZL, X+ \n\t" 
+        "sbi 0x05, 0 \n\t"          // 2      the SBI enables the pixelMux, critical timing set just before the out instruction or 6*n cycles earlier
+        "ld ZH, X+ \n\t"            // 2      load the value end of the line
+        "nop \n\t"                  // 1
+        "add ZL, %1 \n\t" "adc ZH, r1 \n\t"           // 1+1
+        "cp ZH, %2 \n\t" "brlo .+44 \n\t"             // 1+1(2)
+
+      #if F_CPU == 32000000UL
+        ".rept 23 \n\t" 
+      #elif F_CPU == 24000000UL
+        ".rept 16 \n\t" 
+      #elif F_CPU == 20000000UL
+        ".rept ?? \n\t"
+      #else   // Arduino default 16 MHz
+        ".rept 8 \n\t"
+      #endif
+          //"PGM_n: \n\t" // (code size 17+5 words)        
+					                             "lpm r0, Z+ \n\t"                           "nop \n\t"      "nop \n\t"          //     3+1+1
+          "out 0x0b, r0 \n\t" "lpm r0, Z+ \n\t" "ld YL, X+ \n\t"                   "nop \n\t"      "nop \n\t"          // 1+3+2+1+1
+          "out 0x0b, r0 \n\t" "lpm r0, Z+ \n\t" "ld YH, X+ \n\t"                   "nop \n\t"      "nop \n\t"          // 1+3+2+1+1
+          "out 0x0b, r0 \n\t" "lpm r0, Z+ \n\t" "add YL, %1 \n\t" "adc YH,r1\n\t"  "movw Z,Y \n\t" "cp ZH, %2 \n\t"    // 1+3+1+1+1+1
+          "out 0x0b, r0 \n\t" "brsh .+52 \n\t" "rjmp .+94 \n\t"                                                        // 1+1(2)+2    
            
-          //"RAM_n: \n\t" // (code size 17 words)
-                                                                     "ld r0, Z \n\t"                            //       2
-          "out 0x0b, r0 \n\t" "mul r28, r0 \n\t"          "nop \n\t" "ld ZL, X+ \n\t"                           // 1+2+1+2  
-          "out 0x0b, r0 \n\t" "mul r28, r0 \n\t"          "nop \n\t" "ld ZH, X+ \n\t"                           // 1+2+1+2
-          "out 0x0b, r0 \n\t" "mul r28, r0 \n\t"          "add ZL, %1 \n\t" "adc ZH, r29 \n\t" "cp ZH, %2 \n\t" // 1+2+1+1+1
-          "out 0x0b, r0 \n\t" "nop \n\t" "brlo .+34 \n\t"                                                       // 1+1+1(2)
+          //"RAM_n: \n\t" // (code size 17+8 words)
+                                                           "ld r0, Z+ \n\t"                    "nop \n\t"      "nop \n\t"       //       2+1+1
+          "out 0x0b, r0 \n\t" "ld r0, Z+ \n\t" "nop \n\t"  "ld YL, X+ \n\t"                    "nop \n\t"      "nop \n\t"       // 1+2+1+2+1+1  
+          "out 0x0b, r0 \n\t" "ld r0, Z+ \n\t" "nop \n\t"  "ld YH, X+ \n\t"                    "nop \n\t"      "nop \n\t"       // 1+2+1+2+1+1+
+          "out 0x0b, r0 \n\t" "ld r0, Z+ \n\t" "nop \n\t"  "add YL, %1 \n\t" "adc YH,r1 \n\t"  "movw Z,Y \n\t" "cp ZH, %2 \n\t" // 1+2+1+1+1+1+1
+          "out 0x0b, r0 \n\t" "nop \n\t" "brlo .+44 \n\t"                                                                       // 1+1+1(2)
 
         ".endr    \n\t" 
         
-        //"PGM_last: \n\t"  // (code size 17 words)                            
+        //"PGM_last: \n\t"  // (code size 17+5 words)                            
         "rjmp PGM_RAM_end \n\t"     // 1
-        ".rept 16 \n\t"
-          "nop \n\t"                // filling up to 16 words block code size
+        ".rept 22 \n\t"
+          "nop \n\t"                // filling up to 23 words block code size
         ".endr    \n\t" 
         //"PGM_last: \n\t"  // (code size optional)                     
         "nop \n\t"         // "branch + nop" equals the "jmp" execution time 
      //-------------------------------------------------------------------------------------------------------------------------------//  	  
      "PGM_RAM_end: \n\t"        
-        "clr r1 \n\t" "out 0x0b, r1 \n\t"      // back to black
-        "cbi 0x05, 0 \n\t"                     // disable pixelMux
+        "nop \n\t" "nop \n\t" "nop \n\t" // complete the 8 cycles
+				"out 0x0b, r1 \n\t"      // back to black
+        "cbi 0x05, 0 \n\t"       // disable pixelMux
 
         "pop r1 \n\t" "pop r0 \n\t"                           // restore unsaved registers       
         "pop ZH \n\t" "pop ZL \n\t" "pop r29 \n\t" "pop r28 \n\t" "pop XH \n\t" "pop XL \n\t"        
@@ -173,26 +175,28 @@ ISR (TIMER1_OVF_vect) {
 #else
     // blit pixel data to screen without pixel HW mux (4 clock / pix)
     asm volatile (            
-      "push XL \n\t" "push XH \n\t" "push r28 \n\t" "push r29 \n\t" "push ZL \n\t" "push ZH \n\t"        
+      #if F_CPU == 32000000UL
+        ".rept 20  \n\t" // porch delay
+			"nop     \n\t"
+		".endr     \n\t"
+      #endif
+	  "push XL \n\t" "push XH \n\t" "push ZL \n\t" "push ZH \n\t"        
         "push r0 \n\t" "push r1 \n\t"           // save used registers (the compiler does not consider this code)
 
-      "clr r0 \n\t" "cp r0, %3 \n\t" "breq TEXT_MODE \n\t" "rjmp GRAPH_MODE \n\t"
+      "clr r1 \n\t" "cp r1, %3 \n\t" "breq TEXT_MODE \n\t" "rjmp GRAPH_MODE \n\t"
 
-      //------------------------------ TEXT MODE: render the ascii character without x scrolling -----------------------------------------------------//
+      //-mono 4clk (R or G or B)----------------------------- TEXT MODE: render the ascii character without x scrolling -----------------------------------------------------//
       "TEXT_MODE: \n\t" 
         "cbi 0x05, 0 \n\t"                            // 2 disable pixelMux
 				"ld ZL, X+ \n\t" "ld ZH, X+ \n\t"             // 2+2    load the value end of the line
-        "ldi r28, 4 \n\t" "ldi r29, 0 \n\t"           // 1+1
-        "add ZL, %1 \n\t" "adc ZH, r29 \n\t"          // 1+1
+        "nop \n\t" "nop \n\t"                         // 1+1
+        "add ZL, %1 \n\t" "adc ZH, r1 \n\t"           // 1+1
         
       // max value allowed is scrBufWidthInTile    
       #if F_CPU == 32000000UL
-        ".rept 12  \n\t" // porch delay
-					"nop     \n\t"    
-				".endr     \n\t"
         ".rept 31 \n\t" 
       #elif F_CPU == 24000000UL
-        ".rept 22 \n\t" 
+        ".rept 21 \n\t" 
       #elif F_CPU == 20000000UL
         ".rept ?? \n\t"
       #else   // Arduino default 16 MHz
@@ -203,77 +207,73 @@ ISR (TIMER1_OVF_vect) {
           "out 0x0b, r0 \n\t" "lsl r0 \n\t"  "nop \n\t"        "nop \n\t"           // 1+1+1+1
           "out 0x0b, r0 \n\t" "lsl r0 \n\t"  "ld ZL, X+ \n\t"                       // 1+1+2  
           "out 0x0b, r0 \n\t" "lsl r0 \n\t"  "ld ZH, X+ \n\t"                       // 1+1+2
-          "out 0x0b, r0 \n\t" "lsl r0 \n\t"  "add ZL, %1 \n\t" "adc ZH, r29 \n\t"   // 1+1+1+1  
+          "out 0x0b, r0 \n\t" "lsl r0 \n\t"  "add ZL, %1 \n\t" "adc ZH, r1 \n\t"    // 1+1+1+1  
           "out 0x0b, r0 \n\t"                                                       // 1
         ".endr    \n\t"                                         
         "rjmp PGM_RAM_end \n\t" 
 
-      //------------------------------ GRAPH MODE: render the Tiles without x scrolling -----------------------------------------------------//
+      //--mono 4clk (R or G only)---------------------------- GRAPH MODE: render the Tiles without x scrolling -----------------------------------------------------//
       "GRAPH_MODE: \n\t" 
         "cbi 0x05, 0 \n\t"                                // 2      disable pixelMux
 				"ld ZL, X+ \n\t" "ld ZH, X+ \n\t"                 // 2+2    load the value end of the line
-        "ldi r28, 4 \n\t" "ldi r29, 0 \n\t"               // 1+1
-        "add ZL, %1 \n\t" "adc ZH, r29 \n\t"              // 1+1
-        "cp ZH, %2 \n\t" "brlo .+74\n\t" "rjmp .+20 \n\t" // 1+1(2) branch -1
+        "nop \n\t" "nop \n\t"                             // 1+1
+        "add ZL, %1 \n\t" "adc ZH, r1 \n\t"               // 1+1
+        "cp ZH, %2 \n\t" "brsh .+14\n\t" "rjmp .+68 \n\t" // 1+1(2) branch -1
 
       // max value allowed is scrBufWidthInTile    
       #if F_CPU == 32000000UL
-         ".rept 12  \n\t" // porch delay
-					"nop     \n\t"    
-				".endr     \n\t"
-				".rept 21 \n\t" 
+		".rept 16 \n\t"   // TODO: code size issue, shall be 23 instead of 16
       #elif F_CPU == 24000000UL
         ".rept 16 \n\t" 
       #elif F_CPU == 20000000UL
         ".rept ?? \n\t"
       #else   // Arduino default 16 MHz
-        ".rept 8 \n\t"
+        ".rept 8 \n\t"  // OK with 8
       #endif
             
           //--------------------- PGM source (code size 32 words) -------------------------  
           //"PGM_1: \n\t"     
                                                                    "lsl r0 \n\t"  //      1
-          "out 0x0b, r0 \n\t" "nop \n\t"        "nop \n\t"         "lsl r0 \n\t"  // out6 1+1+1+1
           "out 0x0b, r0 \n\t" "nop \n\t"        "nop \n\t"         "lsl r0 \n\t"  // out7 1+1+1+1
           "out 0x0b, r0 \n\t"                                                     // out8 1+3  
           //"PGM_entry: \n\t"
                               "lpm r0, Z \n\t"                                    //        3
-          "out 0x0b, r0 \n\t" "ld ZL, X+ \n\t"                     "lsl r0 \n\t"  // out1 1+2+1
-          "out 0x0b, r0 \n\t" "ld ZH, X+ \n\t"                     "lsl r0 \n\t"  // out2 1+2+1
-          "out 0x0b, r0 \n\t" "add ZL, %1 \n\t" "adc ZH, r29 \n\t" "lsl r0 \n\t"  // out3 1+1+1+1  
-          "out 0x0b, r0 \n\t" "nop \n\t"        "lsl r0 \n\t"   "cp ZH, %2 \n\t"  // out4 1+1+1+1
-          "out 0x0b, r0 \n\t" "brsh .+66 \n\t"  "nop \n\t"         "lsl r0 \n\t"  // out5 1+1+1(2)+1
-          "out 0x0b, r0 \n\t" "lsl r0 \n\t"     "rjmp .+120 \n\t"                 // out6 1+1+2   
+          "out 0x0b, r0 \n\t" "mov r1,r0\n\t"   "swap r1\n\t"      "lsl r0 \n\t"  // out1 1+1+1+1 (preserve the high nibble)
+          "out 0x0b, r0 \n\t" "ld ZL, X+ \n\t"                     "lsl r0 \n\t"  // out2 1+2+1
+          "out 0x0b, r0 \n\t" "ld ZH, X+ \n\t"                     "lsl r0 \n\t"  // out3 1+2+1
+          "out 0x0b, r0 \n\t" "mov r0,r1 \n\t"  "clr r1 \n\t"   "add ZL, %1 \n\t" // out4 1+1+1+1 (re-use the high nibble)
+          "out 0x0b, r0 \n\t" "adc ZH, r1 \n\t" "lsl r0 \n\t"      "cp ZH,%2\n\t" // out5 1+1+1+1
+          "out 0x0b, r0 \n\t" "brsh .+66 \n\t"  "nop \n\t"         "lsl r0 \n\t"  // out6 1+1+1(2)+1
+          "out 0x0b, r0 \n\t" "lsl r0 \n\t"     "rjmp .+120 \n\t"                 // out7 1+1+2   
            
           //--------------------- RAM source (code size 28 words) ------------------------   
           //"RAM_1: \n\t"        
-          "out 0x0b, r0 \n\t" "nop \n\t"        "nop \n\t"         "lsl r0 \n\t"  // out7 1+1+1+1
-          //"RAM_entry: \n\t"
-          "out 0x0b, r0 \n\t"     "ld r0, Z \n\t"                  "nop \n\t"     // out8 1+2+1
-          "out 0x0b, r0 \n\t" "ld ZL, X+ \n\t"                     "lsl r0 \n\t"  // out1 1+2+1
-          "out 0x0b, r0 \n\t" "ld ZH, X+ \n\t"                     "lsl r0 \n\t"  // out2 1+2+1
-          "out 0x0b, r0 \n\t" "add ZL, %1 \n\t" "adc ZH, r29 \n\t" "lsl r0 \n\t"  // out3 1+1+1+1  
-          "out 0x0b, r0 \n\t" "nop \n\t"        "lsl r0 \n\t"   "cp ZH, %2 \n\t"  // out4 1+1+1+1
-          "out 0x0b, r0 \n\t" "brsh .+10 \n\t"  "nop \n\t" "lsl r0 \n\t"          // out5 1+1+1(2)+1
-          "out 0x0b, r0 \n\t" "lsl r0 \n\t" "rjmp .+64 \n\t"                      // out6 1+1+2
+          "out 0x0b, r0 \n\t" "nop \n\t"                                                   // out8 1+1+2
+					//"RAM_entry: \n\t"
+                                                "ld r0, Z \n\t"                     
+          "out 0x0b, r0 \n\t" "mov r1,r0\n\t"   "swap r1\n\t"      "lsl r0 \n\t"  // out1 1+1+1+1 (preserve the high nibble)
+          "out 0x0b, r0 \n\t" "ld ZL, X+ \n\t"                     "lsl r0 \n\t"  // out2 1+2+1
+          "out 0x0b, r0 \n\t" "ld ZH, X+ \n\t"                     "lsl r0 \n\t"  // out3 1+2+1
+          "out 0x0b, r0 \n\t" "mov r0,r1 \n\t"  "clr r1 \n\t"   "add ZL, %1 \n\t" // out4 1+1+1+1 (re-use the high nibble)
+          "out 0x0b, r0 \n\t" "adc ZH, r1 \n\t" "lsl r0 \n\t"      "cp ZH,%2\n\t" // out5 1+1+1+1
+          "out 0x0b, r0 \n\t" "brsh .+10 \n\t"  "nop \n\t"         "lsl r0 \n\t"  // out6 1+1+1(2)+1
+          "out 0x0b, r0 \n\t" "lsl r0 \n\t"     "rjmp .+64 \n\t"                  // out7 1+1+2
         ".endr    \n\t" 
         
         //"PGM_last: \n\t"  // (code size 32 words) 
                                                                  "lsl r0 \n\t"    //      1            
-        "out 0x0b, r0 \n\t" "nop \n\t"        "nop \n\t"         "lsl r0 \n\t"    // out6 1+1+1+1 
-        "out 0x0b, r0 \n\t" "nop \n\t"        "nop \n\t"         "lsl r0 \n\t"    // out7 1+1+1+1 
-        "out 0x0b, r0 \n\t" "rjmp PGM_RAM_end \n\t"                               // out8 1+2	
-        ".rept 21 \n\t"
+        "out 0x0b, r0 \n\t" "nop \n\t"        "nop \n\t"         "lsl r0 \n\t"    // out7 1+1+1+1
+				"out 0x0b, r0 \n\t" "nop \n\t" "rjmp PGM_RAM_end \n\t"                    // out8 1+1+2	
+        ".rept 24 \n\t"
               "nop \n\t"								// filling up to 31 words block code size remaining
         ".endr    \n\t" 
         //"RAM_last: \n\t"  // (code size optional)                                            
-        "out 0x0b, r0 \n\t" "nop \n\t"        "nop \n\t"         "lsl r0 \n\t"    // out7 1+1+1+1 
-        "out 0x0b, r0 \n\t" "nop \n\t"                                            // out8 1 + "branch + nop" equals the "jmp" execution time      							
+        "out 0x0b, r0 \n\t" "nop \n\t" "nop \n\t" "nop \n\t"                      // out8 1 + "branch + nop" equals the "jmp" execution time      							
         //-------------------------------------------------------------------------------------------------------------------------------//  	  
         "PGM_RAM_end: \n\t"        
-        "clr r1 \n\t" "out 0x0b, r1 \n\t"      // back to black
+        "out 0x0b, r1 \n\t"      // back to black
         "pop r1 \n\t" "pop r0 \n\t"                           // restore unsaved registers       
-        "pop ZH \n\t" "pop ZL \n\t" "pop r29 \n\t" "pop r28 \n\t" "pop XH \n\t" "pop XL \n\t"        
+        "pop ZH \n\t" "pop ZL \n\t" "pop XH \n\t" "pop XL \n\t"        
         :
         :  "x" (&scrBuf[TileIndex]), "r" (TilePixOffset), "r" (PGMaddrH), "r" (mode)
     );  
@@ -336,16 +336,21 @@ ISR (TIMER1_OVF_vect) {
   PS2clk_last = PS2clk;
 
   // uart handling
-  if ((UCSR0A &(1<<UDRE0)) && (txbuffer.available() > 0)) UDR0 = txbuffer.readISR(); // extract from tx ringbuffer and send
-  if (UCSR0A &(1<<RXC0)) rxbuffer.writeISR((char)UDR0);   // receive and place the rxringbuffer
-  
+  if ((UCSR0A &(1<<UDRE0)) && (txbuffer.available() == true)) UDR0 = txbuffer.readfast(); // extract from tx ringbuffer and send
+  if (UCSR0A &(1<<RXC0)) rxbuffer.write((char)UDR0);   // receive and place the rxringbuffer
+}
+
+APLcore::APLcore() {
+	pFont = NULL;
+	screenColor = GREEN;
 }
 
 void APLcore::coreInit() {
 	
   TWCR = 0;			// disable the 2-wire serial interface
 	
-	DDRD |= 0xc0;  // monochrome assigned portd pins 6 and 7 as outputs, without changing the value of pins 0 & 1, which are RX & TX  
+	setTextMode();  // includes ports initialization
+	
   DDRB |= 0x05;  // VSYNC assigned PB2 (Arduino pin D10), PB0 as output for pixelMux
   DDRC &= 0xcf;  // PS2 Keyboard clk on PC5, data PC4
   
@@ -378,15 +383,8 @@ void APLcore::coreInit() {
    UBRR0H = byte((BAUD_PRESCALE >> 8) & 0xff); // Load upper 8-bits into the high byte of the UBRR register
    /* Default frame format is 8 data bits, no parity, 1 stop bit to change use UCSRC, see AVR datasheet*/ 
 
-  // Enable receiver and transmitter and receive complete interrupt 
+  // Enable receiver and transmitter
   UCSR0B = (1<<TXEN0)|(1<<RXEN0);
-  
-  // initialize the screen memory with valid content
-  for (unsigned int y = 0; y < srcBufSize; y++) {    
-    //scrBuf[y] = &coreTile[TileMemSize * 0];  // black tile
-    //scrBuf[y] = &coreTile[TileMemSize * 1];  // damier tile
-    scrBuf[y] = &coreTile[TileMemSize * 2];  // square tile
-  }
 }
 
 bool APLcore::isLineActive() {
@@ -395,11 +393,76 @@ bool APLcore::isLineActive() {
 
 void APLcore::setTextMode() {
 	mode = textMode;
-}
-void APLcore::setGraphMode() {
-	mode = graphMode;
+	MemWidth = FontMemWidth;
+	setColor(GREEN);
+	initScreenBuffer();
 }
 
+void APLcore::setGraphMode() {
+	mode = graphMode;
+	MemWidth = TileMemWidth;
+	setColor(WHITE);
+	initScreenBuffer();
+}
+
+void APLcore::setColor(byte color) {
+#ifdef PIXEL_HW_MUX
+		screenColor = color; // all colors are allowed
+#else
+		if((color == RED) || (color == GREEN) || (color == BLUE)) screenColor = color; 
+		else screenColor = GREEN;	
+		initScreenBuffer(); // re-init because each color has a different font/tile
+#endif
+
+	// (R0,G0, B0, R1, G1, B1) color assigned portd pins 2 to 7 as outputs, without changing the value of pins 0 & 1, which are RX & TX  
+  DDRD &= 0b00000011;
+  if (screenColor & RED) 	  DDRD |= 0b10010000;
+	if (screenColor & GREEN) 	DDRD |= 0b01001000;
+  if (screenColor & BLUE) 	DDRD |= 0b00100100;
+}
+
+void APLcore::initScreenBuffer() {
+#ifdef PIXEL_HW_MUX
+		if(mode == textMode) {
+			pFont = &fontWhite[0]; // same font for all
+			// initialize the screen memory with valid content
+			for (unsigned int y = 0; y < srcBufSize; y++) {    
+				scrBuf[y] = &pFont[(unsigned int)FontMemSize * '0'];
+			}		
+		}
+		else {
+			// graphMode, initialize the screen memory with valid content
+			for (unsigned int y = 0; y < srcBufSize; y++) {    
+				//scrBuf[y] = &coreTile[TileMemSize * 0];  // black tile
+				if(y&1) scrBuf[y] = &coreTile[TileMemSize * 4];  // damier tile
+				else scrBuf[y] = &coreTile[TileMemSize * 2];  // square tile
+				//else scrBuf[y] = &coreTile[TileMemSize * 3];  // full tile
+			}
+		}
+#else
+		// no pixel mux
+		if(mode == textMode) {
+			// TEXT mode
+			pFont = &fontGreen[0]; //default green
+			if(screenColor == RED) pFont = &fontRed[0];
+			if(screenColor == BLUE) pFont = &fontBlue[0];
+			for (unsigned int y = 0; y < srcBufSize; y++) {    
+				scrBuf[y] = &pFont[(unsigned int)FontMemSize * '0'];
+			}		
+		}
+		else {
+			// initialize the screen memory with valid content
+			byte* ptr = &coreTileG[0]; //default green
+			if(screenColor == RED) ptr = &coreTileR[0];
+			if(screenColor == BLUE) ptr = &coreTileB[0];
+			for (unsigned int y = 0; y < srcBufSize; y++) {    
+				//scrBuf[y] = &ptr[TileMemSize * 0];  // black tile
+				scrBuf[y] = &ptr[TileMemSize * 1];  // damier tile
+			}
+		}
+#endif
+}
+	
 byte APLcore::getscrViewWidthInTile() {
 	if (mode == textMode)
 		return scrViewWidthInTileTEXT; 
@@ -427,7 +490,7 @@ void APLcore::setTileXY(byte x, byte y, byte* TilePtr) {
 }
 
 void APLcore::setTileXYtext(byte x, byte y, char c) { 
-	setTileXY(x, y, &console_font_6x8[(unsigned int)c * TileMemHeight]);
+	setTileXY(x, y, &pFont[(unsigned int)c * FontMemSize]);
 }	
 
 void APLcore::setXScroll(byte scrollValue) {
@@ -463,12 +526,16 @@ char APLcore::keyRead() {
 	return kbd.read();
 }
 
-byte APLcore::UARTavailable_rx() {
+bool APLcore::UARTavailableRX() {
 	return rxbuffer.available();
 }
 
-byte APLcore::UARTavailable_tx() {
+bool APLcore::UARTavailableTX() {
 	return txbuffer.available();
+}
+
+byte APLcore::UARTcountRX() {
+	return rxbuffer.count();
 }
 
 byte APLcore::UARTwrite(const __FlashStringHelper* data) {

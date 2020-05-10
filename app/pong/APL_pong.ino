@@ -19,23 +19,23 @@
 #include <APLcore.h>
 #include "tile.h"
 
-APLcore* pAPL = 0;
+APLcore* pAPL = NULL;
 byte scrViewWidthInTile = 0;
 
 // RAM tile the custom rendering
 byte RAM_Tile[TileMemSize];
-byte* BallTile = &RAM_Tile[TileMemSize * 0];
+byte* BallTile = RAM_Tile;
 
 // PGM tile pointer init
-const byte* Black = &Tile[TileMemSize * 0];
-const byte* Paddle = &Tile[TileMemSize * 4];
-const byte* Net = &Tile[TileMemSize * 5];
+const byte* Black = &Tile[TileMemSize * tile_empty];
+const byte* PaddleL = &Tile[TileMemSize * tile_paddle_left];
+const byte* Net = &Tile[TileMemSize * tile_net];
 byte* ballBackgroundTile = Black;
 byte* paddleBackgroundTile = Black;
 
 signed char Paddle_y = scrViewHeightInTile/2;
 signed char Ball_x = 0, Ball_y = 0;
-signed char Ball_tile_x =scrViewWidthInTile/2, Ball_tile_y = scrViewHeightInTile/2;
+signed char Ball_tile_x = 0, Ball_tile_y = 0;
 
 #define MIN_BALL_X 0
 #define MAX_BALL_X 7
@@ -51,9 +51,13 @@ byte dirHV = DOWN, dirLR = RIGHT;
 void setup() {
   
   pAPL = APLcore::instance();
-  pAPL->setGraphMode();
   pAPL->coreInit();
+  pAPL->setGraphMode();
+  #ifndef PIXEL_HW_MUX
+    pAPL->setColor(RED); // mono RED for no pixel mux (corresponds to current tile definition)
+  #endif
   scrViewWidthInTile = pAPL->getscrViewWidthInTile();
+  Ball_tile_x =scrViewWidthInTile/2, Ball_tile_y = scrViewHeightInTile/2;
   pAPL->setSound(sound_intro);   // set the intro sound
   
   // send version on serial port
@@ -62,7 +66,7 @@ void setup() {
   
   // splash screen
   for(byte y=0; y<scrViewHeightInTile; y++) {
-    unsigned int i = (unsigned int)y * 20;  // 20 tiles width
+    unsigned int i = (unsigned int)y * 20;  // splash image has 20 tiles width
     for (byte x=0; x<scrViewWidthInTile; x++) {      
       pAPL->setTileXY(x, y, &TILEimage[TileMemSize * i++]);
     }
@@ -83,22 +87,22 @@ void setup() {
 
   // draw the horizontal frame
   for (byte x=0; x<scrViewWidthInTile; x++) {
-    pAPL->setTileXY(x, 0, &Tile[TileMemSize * 7]);
-    pAPL->setTileXY(x, scrViewHeightInTile-1, &Tile[TileMemSize * 11]);
+    pAPL->setTileXY(x, 0, &Tile[TileMemSize * tile_top_border]);
+    pAPL->setTileXY(x, scrViewHeightInTile-1, &Tile[TileMemSize * tile_bottom_border]);
   }      
   // draw the vertical frame
   for(byte y=0; y<scrViewHeightInTile; y++) {
-    pAPL->setTileXY(0, y, &Tile[TileMemSize * 13]);
-    pAPL->setTileXY(scrViewWidthInTile-1, y, &Tile[TileMemSize * 9]);
+    pAPL->setTileXY(0, y, &Tile[TileMemSize * tile_left_border]);
+    pAPL->setTileXY(scrViewWidthInTile-1, y, &Tile[TileMemSize * tile_right_border]);
   }
   // draw the 4 corners
-  pAPL->setTileXY(0, 0, &Tile[TileMemSize * 6]);
-  pAPL->setTileXY(scrViewWidthInTile-1, 0, &Tile[TileMemSize * 8]);
-  pAPL->setTileXY(0, scrViewHeightInTile-1, &Tile[TileMemSize * 12]);
-  pAPL->setTileXY(scrViewWidthInTile-1, scrViewHeightInTile-1, &Tile[TileMemSize * 10]);   
+  pAPL->setTileXY(0, 0, &Tile[TileMemSize * tile_top_left_corner]);
+  pAPL->setTileXY(scrViewWidthInTile-1, 0, &Tile[TileMemSize * tile_top_right_corner]);
+  pAPL->setTileXY(0, scrViewHeightInTile-1, &Tile[TileMemSize * tile_bottom_left_corner]);
+  pAPL->setTileXY(scrViewWidthInTile-1, scrViewHeightInTile-1, &Tile[TileMemSize * tile_right_bottom_corner]);   
   // draw the paddle
   paddleBackgroundTile = pAPL->getTileXY(0, Paddle_y);
-  pAPL->setTileXY(0, Paddle_y, Paddle); 
+  pAPL->setTileXY(0, Paddle_y, PaddleL); 
   // draw the net
   for(byte y=1; y<scrViewHeightInTile-1; y++) {
     pAPL->setTileXY(scrViewWidthInTile/2, y, Net); 
@@ -108,12 +112,11 @@ void setup() {
   ballBackgroundTile = pAPL->getTileXY(Ball_tile_x, Ball_tile_y);
 }
 
-void loop() {
-  
+void loop() {  
   unsigned long t = pAPL->ms_elpased();
   
   // check if the shortest command could be in the stream
-  if (pAPL->UARTavailable_rx() >= 1) {
+  if (pAPL->UARTavailableRX() == true) {
     char singleChar = pAPL->UARTread();  // get the command
     pAPL->UARTwrite(".");
     switch (singleChar) {    
@@ -158,8 +161,8 @@ void loop() {
     
     if (Paddle_y != paddle) {
       pAPL->setTileXY(0, paddle, paddleBackgroundTile); // restore tile where was the paddle on the screen       
-      paddleBackgroundTile = pAPL->getTileXY(0, Paddle_y); // save th current tile
-      pAPL->setTileXY(0, Paddle_y, Paddle); // redraw the paddle on the screen
+      paddleBackgroundTile = pAPL->getTileXY(0, Paddle_y); // save the current tile
+      pAPL->setTileXY(0, Paddle_y, PaddleL); // redraw the paddle on the screen
     }
   }
     
@@ -213,12 +216,26 @@ void loop() {
   Ball_tile_x = tmpx;
   Ball_tile_y = tmpy;
   byte* p = ballBackgroundTile = pAPL->getTileXY(Ball_tile_x, Ball_tile_y);
-  for(byte y=0; y<TileMemHeight; y++) {
+  for(byte y=0; y<TileMemSize; y++) {
     BallTile[y] = pgm_read_byte(p++);
   }  
   // overlay the ball
-  BallTile[Ball_y] |= 1 << (MAX_BALL_X - Ball_x);
-  pAPL->setTileXY(Ball_tile_x, Ball_tile_y, BallTile); // draw the ball on the screen    
+  #ifdef PIXEL_HW_MUX
+    switch (Ball_x) {
+      case 0: BallTile[Ball_y*TileMemWidth+0] |= 0b11100000; break;
+      case 1: BallTile[Ball_y*TileMemWidth+0] |= 0b00011100; break;
+      case 2: BallTile[Ball_y*TileMemWidth+1] |= 0b11100000; break;
+      case 3: BallTile[Ball_y*TileMemWidth+1] |= 0b00011100; break;
+      case 4: BallTile[Ball_y*TileMemWidth+2] |= 0b11100000; break;
+      case 5: BallTile[Ball_y*TileMemWidth+2] |= 0b00011100; break;
+      case 6: BallTile[Ball_y*TileMemWidth+3] |= 0b11100000; break;
+      case 7: BallTile[Ball_y*TileMemWidth+3] |= 0b00011100; break;
+    }
+  #else
+    BallTile[Ball_y] |= 1 << (MAX_BALL_X - Ball_x);
+  #endif
 
+  pAPL->setTileXY(Ball_tile_x, Ball_tile_y, BallTile); // draw the ball on the screen
+    
   while(t+25 > pAPL->ms_elpased()); // 25 ms periodic refresh
  }

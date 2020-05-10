@@ -26,76 +26,65 @@ public:
     RingBuffer() {
         Head = Tail = 0;        
     }   
-		inline byte available() {
-      unsigned char Count = Head - Tail;
-			if (Count < 0) Count += BufferSize;
-			return (byte)Count;
-    }    
+ 		inline byte count() {
+      char Count = Head - Tail;
+			if (Count < 0) Count = BufferSize - (Tail - Head);
+			return Count;
+    }
+ 		bool available() {
+			return (Head != Tail) ? true: false;
+    } 
 		byte write(char* data) {
         byte i=0;
-        while((data[i] != NULL) && (available() < BufferSize)) {
-            cli(); // begin critical section
-						Buffer[Head++] = data[i]; 
-            if (Head >= BufferSize) Head = 0; //index reached buffer's end
-						sei(); // end critical section
+				byte h = (Head + 1) % BufferSize;
+        while((data[i] != 0) && (h != Tail)) {
+						Buffer[Head] = data[i]; 
+            Head = h;
+						h = (Head + 1) % BufferSize;
 						i++;						
         }
         return i; // return the written count
     }
  		byte writeF(const byte* data) {
         byte i=0;
+				byte h = (Head + 1) % BufferSize;
 				char* ptr = (char*)data;
-        while((data[i] != NULL) && (available() < BufferSize)) {
-            cli(); // begin critical section
-						Buffer[Head++] = pgm_read_byte(ptr++); 
-            if (Head >= BufferSize) Head = 0; //index reached buffer's end
-						sei(); // end critical section
+        while((data[i] != 0) && (h != Tail)) {
+						Buffer[Head] = pgm_read_byte(ptr++); 
+            Head = h;
+						h = (Head + 1) % BufferSize;
             i++;						
         }
         return i; // return the written count
     }
     byte write(char data) {
         byte i=0;
-        if(available() < BufferSize-1) {  // avoid to full completely for the subtraction Head - Tail
-            cli(); // begin critical section
-            Buffer[Head++] = data;
-            if (Head >= BufferSize) Head = 0; //index reached buffer's end    
-						sei(); // end critical section
+				byte h = (Head + 1) % BufferSize;
+        if(h != Tail) {  // avoid to full completely for the subtraction Head - Tail
+            Buffer[Head] = data;
+            Head = h;
 					  i++;          
-        }
-        return i; // return the written count
-    }
-     byte writeISR(char data) {
-        byte i=0;
-        if(available() < BufferSize-1) {  // avoid to full completely for the subtraction Head - Tail
-            Buffer[Head++] = data; i++;
-            if (Head >= BufferSize) Head = 0; //index reached buffer's end            
         }
         return i; // return the written count
     }
 		char read() {
         char retVal = 0;
-        if (available() > 0) {
-            cli(); // begin critical section
-						retVal = Buffer[Tail++];
-            if (Tail >= BufferSize) Tail = 0; //index reached buffer's end
-						sei(); // end critical section  
+        if (Tail != Head) {
+						retVal = Buffer[Tail];
+						Tail = (Tail + 1) % BufferSize;
         }        
         return retVal;
     }
- 		char readISR() {
-        char retVal = 0;
-        if (available() > 0) {
-            retVal = Buffer[Tail++];
-            if (Tail >= BufferSize) Tail = 0; //index reached buffer's end            
-        }        
+ 		char readfast() {
+        char retVal = Buffer[Tail];
+				Tail = (Tail + 1) % BufferSize;
         return retVal;
-		}
-    char peek() {
+		}    
+		char peek() {
         char retVal = 0;
-        if (available() > 0) {
-            retVal = Buffer[Tail];
-        }        
+				if (Tail != Head) {
+						retVal = Buffer[Tail];
+        }            
         return retVal;
     }
 
