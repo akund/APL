@@ -34,8 +34,8 @@ The APL is designed for Arduino software development environement. The hardware 
 
 ## Pong (graphic mode)
 
-[<img width='40%' src='doc/logo.jpg'/>](https://www.youtube.com/watch?v=c0AHMCGUVl8)
-[<img width='50%' src='doc/pong.jpg'/>](https://www.youtube.com/watch?v=c0AHMCGUVl8)
+[<img width='40%' src='doc/logo.jpg'/>](https://www.youtube.com/watch?v=ULt2-MgvNZw)
+[<img width='50%' src='doc/pong.jpg'/>](https://www.youtube.com/watch?v=ULt2-MgvNZw)
 
 # Hardware Configuration
 
