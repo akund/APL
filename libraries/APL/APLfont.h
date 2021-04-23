@@ -2,10 +2,11 @@
 /*                                                                                                 */
 /* file:          APLfont.h                                                                        */
 /*                                                                                                 */
-/* source:        2018-2020, written by Adrian Kundert (adrian.kundert@gmail.com)                  */
+/* source:        2018-2021, written by Adrian Kundert (adrian.kundert@gmail.com)                  */
 /*                                                                                                 */
 /* description:   font library from                                                                */
 /*                https://github.com/idispatch/raster-fonts/blob/master/font-6x8.c                 */
+/*     https://raw.githubusercontent.com/idispatch/raster-fonts/master/06x08_Terminal_Microsoft.png*/
 /*                                                                                                 */
 /* This library is free software; you can redistribute it and/or modify it under the terms of the  */
 /* GNU Lesser General Public License as published by the Free Software Foundation;                 */
@@ -21,12 +22,12 @@
 
 #ifdef PIXEL_HW_MUX
 
-const byte FontMemWidth = 3;  // halfed because double pix per byte
-const byte FontMemHeight = 8; // MemHeight needs to be a pow2.
-const byte FontMemSize = FontMemWidth*FontMemHeight;
+const uint8_t FontMemWidth = 3;  // halfed because double pix per byte
+const uint8_t FontMemHeight = 8; // MemHeight needs to be a pow2.
+const uint8_t FontMemSize = FontMemWidth*FontMemHeight;
 
 //mono white "R0 G0 B0, R1 G1 B1 0 0", ... "... R5 G5 B5 0 0"
-const byte fontWhite[] PROGMEM = {
+const uint8_t fontWhite[] PROGMEM = {
 
 	/* code=0, ascii=' ' */
 	0b00000000, 0b00000000, 0b00000000,
@@ -1311,11 +1312,11 @@ const byte fontWhite[] PROGMEM = {
 
 #else
 
-const byte FontMemWidth = 1;  // 6 pix per byte
-const byte FontMemHeight = 8; // MemHeight needs to be a pow2.
-const byte FontMemSize = FontMemWidth*FontMemHeight;
+const uint8_t FontMemWidth = 1;  // 6 pix per byte
+const uint8_t FontMemHeight = 8; // MemHeight needs to be a pow2.
+const uint8_t FontMemSize = FontMemWidth*FontMemHeight;
 //mono red (sequence is bit7, bit6 ... bit2)
-const byte fontRed[] PROGMEM={
+const uint8_t fontRed[] PROGMEM={
 
 	/* code=0, ascii=' ' */
 	0b00000000,
@@ -2599,7 +2600,7 @@ const byte fontRed[] PROGMEM={
 };
 
 //mono green (sequence is bit6, bit5 ... bit1)
-const byte fontGreen[] PROGMEM={
+const uint8_t fontGreen[] PROGMEM={
 	
 	/* code=0, ascii=' ' */
 	0b00000000,
@@ -3883,7 +3884,7 @@ const byte fontGreen[] PROGMEM={
 };
 
 //mono Blue (sequence is bit5, bit4 ... bit0)
-const byte fontBlue[] PROGMEM={
+const uint8_t fontBlue[] PROGMEM={
 
 	/* code=0, ascii=' ' */
 	0b00000000,

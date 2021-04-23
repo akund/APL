@@ -2,7 +2,7 @@
 /*                                                                                                 */
 /* file:          APLcore.h                                                                        */
 /*                                                                                                 */
-/* source:        2018-2020, written by Adrian Kundert (adrian.kundert@gmail.com)                  */
+/* source:        2018-2021, written by Adrian Kundert (adrian.kundert@gmail.com)                  */
 /*                                                                                                 */
 /* description:   APL interrupt driven engine for VGA, Audio, UART and PS2 peripherals             */
 /*                                                                                                 */
@@ -19,114 +19,150 @@
 #ifndef APLcore_h
 #define APLcore_h
 
-#include "Arduino.h"
+#ifdef ATMEL_STUDIO
+	#include <avr/pgmspace.h>
+	#include <avr/io.h>
+	#include <avr/interrupt.h>	
+#else
+	#include "Arduino.h"
+#endif
+
+#include "config.h"				// Hardware Config
 #include "ps2keyboard.h"
 #include "APLringBuffer.h"
 
 // APL software version
-const byte SW_version_mj = 1;
-const byte SW_version_mn = 0;
+const uint8_t SW_version_mj = 2;
+const uint8_t SW_version_mn = 0;
 
-//================================ Hardware Config (begin) ========================================//
-#define F_CPU 24000000UL  // system clock
-#define PIXEL_HW_MUX      // enable this define when Pixel Hardware Mux is used
-#define scaling(a) (byte)(F_CPU / 32000000.0 * a)
+#define scaling(a) (uint8_t)(F_CPU / 32000000.0 * a)
 
 #define RED 	1
-#define GREEN 2
+#define GREEN 	2
 #define BLUE	4
 #define WHITE	(RED | GREEN | BLUE)
+/* 1 blue
+2 green
+3 cyan
+4 red
+5 magenta
+6 yellow
+7 white */
 
-#define USART_BAUDRATE 9600 //baud rate for the APL UART
-
-#if F_CPU == 32000000UL
-	const byte scrViewWidthInTileTEXT = 31; // 2.5. (1.8.12)
-	const byte scrViewWidthInTileGRAPH = 23; // 2.5. (1.8.12)
-#elif F_CPU == 24000000UL
-	const byte scrViewWidthInTileTEXT = 21; // 1.5. (1.8.12)
-	const byte scrViewWidthInTileGRAPH = 16; // 1.5. (1.8.12)
+#if F_CPU == 32000000UL	
+	const uint8_t scrViewWidthInTileTEXT = 29; // 22.4.21 (AS7)
+	#ifdef PIXEL_HW_MUX		
+		const uint8_t scrViewWidthInTileGRAPH = 21; // 12.2.21 (AS7)
+	#else		
+		const uint8_t scrViewWidthInTileGRAPH = 17; // with xscrolling 22.4.21 (AS7)
+		const uint8_t scrViewWidthInTileGRAPH_PGM = 19; // without xscrolling 22.4.21 (AS7)
+	#endif
+#elif F_CPU == 24000000UL	
+	#ifdef PIXEL_HW_MUX	
+		const uint8_t scrViewWidthInTileTEXT = 20; // 22.4.21 (AS7)	
+		const uint8_t scrViewWidthInTileGRAPH = 14; // 22.4.21 (AS7)
+	#else
+		const uint8_t scrViewWidthInTileTEXT = 19; // 22.4.21 (AS7)
+		const uint8_t scrViewWidthInTileGRAPH = 11; // with xscrolling 22.4.21 (AS7)
+		const uint8_t scrViewWidthInTileGRAPH_PGM = 13; // without xscrolling 22.4.21 (AS7)
+	#endif
 #elif F_CPU == 20000000UL
-	const byte scrViewWidthInTileTEXT = ??;
-	const byte scrViewWidthInTileGRAPH = ??;
+	const uint8_t scrViewWidthInTileTEXT = ??;
+	const uint8_t scrViewWidthInTileGRAPH = ??;
 #else 	// Arduino default 16 MHz
-	const byte scrViewWidthInTileTEXT = 11; // 1.5. (1.8.12)
-	const byte scrViewWidthInTileGRAPH = 8; // 1.5. (1.8.12)
+	#ifdef PIXEL_HW_MUX	
+		const uint8_t scrViewWidthInTileTEXT = 9; // 1.5.20 (Arduino 1.8.12)
+		const uint8_t scrViewWidthInTileGRAPH = 6; // 1.5.20 (Arduino 1.8.12)
+	#else
+		const uint8_t scrViewWidthInTileTEXT = 8; // 22.4.21 (AS7)
+		const uint8_t scrViewWidthInTileGRAPH = 4; // with xscrolling 22.4.21 (AS7)
+		const uint8_t scrViewWidthInTileGRAPH_PGM = 6; // without xscrolling 22.4.21 (AS7)	
+	#endif
 #endif
-//================================ Hardware Config (end) ==========================================//
 
 // APL core engine constants
-const byte scrViewHeightInTile = 20;
-const byte verticalScaling = 3;                         // repeating at each n lines
-const byte scrBufWidthInTile = scrViewWidthInTileTEXT;  // TEXT mode is larger than GRAPH mode
-const byte scrBufHeightInTile = scrViewHeightInTile;    // tiles height. The max is verticalPixels/verticalScaling/TileMemHeight
+const uint8_t scrViewHeightInTile = 20;
+const uint8_t verticalScaling = 3;                         // repeating at each n lines
+const uint8_t scrBufWidthInTile = scrViewWidthInTileTEXT;  // TEXT mode is larger than GRAPH mode
+const uint8_t scrBufHeightInTile = scrViewHeightInTile+1;    // tiles height+1 for yscoll. The max is verticalPixels/verticalScaling/(TileMemHeight-1)
+// VGAmode
+const uint8_t Disabled		= 0;
+const uint8_t TextMode		= 1;
+const uint8_t GraphPgmMode	= 2;
+const uint8_t GraphMode		= 3;
 
 class APLcore
 {
-	private:
+	public:
 		APLcore(); 								///< singleton object no accessible 
 	
-	public:
+#ifndef ATMEL_STUDIO
 		static APLcore* instance() {
 				static APLcore INSTANCE;
 				return &INSTANCE;
 		}
+#endif		
+		void coreInit();												///< initializes and activates the core
+		bool isLineActive();											///< returns true when the core sends pixel lines
+		void setColor(uint8_t color);
+		void initScreenBuffer(uint8_t mode);
+		void initScreenBuffer();		
 		
-		void coreInit();          ///< initializes and activates the core
-		bool isLineActive();      ///< returns true when the core sends pixel lines
-		void setTextMode();       ///< set the VGA engine to text mode (6x8 character)
-		void setGraphMode();      ///< set the VGA engine to graphical mode (8x8 tile)
-		void setColor(byte color);
-		void initScreenBuffer();
-		
-		byte getscrViewWidthInTile();
-		byte getscrViewHeightInTile() {
+		uint8_t getscrViewWidthInTile();
+		uint8_t getTileMemSize();
+		uint8_t getscrViewHeightInTile() {
 				return scrViewHeightInTile; 
 		}
-		byte* getTileXY(byte x, byte y);											///< get the pointer for the Tile at position (x,y)
-		void setTileXYdirect(byte x, byte y, byte* TilePtr);  ///< at position (x,y), set the pointer to the Tile (without ISR sync)
-		void setTileXY(byte x, byte y, byte* TilePtr);        ///< at position (x,y), set the pointer to the Tile (ISR sync, better to avoid conflict)
-		void setTileXYtext(byte x, byte y, char c);	
-		void setXScroll(byte scrollValue);
-		void setYScroll(byte scrollValue);
+		uint8_t* getTileXY(uint8_t x, uint8_t y);						///< get the pointer for the Tile at position (x,y)
+		void setRAMTileXY(uint8_t x, uint8_t y, uint8_t* TilePtr);		///< at position (x,y), set the pointer to the Tile from RAM
+		void setTileXY(uint8_t x, uint8_t y, uint8_t* TilePtr);			///< at position (x,y), set the pointer to the Tile from PGM
+		void shiftLeftTile();
+		void shiftRightTile();
+		void shiftUpTile();
+		void shiftDownTile();
+		void setTileXYtext(uint8_t x, uint8_t y, char c);	
+		void setCursor(uint8_t x, uint8_t y, bool active);
+		void setCursorXY(uint8_t x, uint8_t y);
+		void setXScroll(uint8_t scrollValue);
+		void setYScroll(uint8_t scrollValue);
+		void setTileScroll(uint8_t scrollValue);
+		bool setRAMSound(uint8_t* str);									///< set sound to be played
+		bool setSound(uint8_t* str);									///< set sound to be played
+		bool setTone(uint8_t tone, uint8_t duration);
+		void offSound();												///< switch off the sound
+		bool isSoundOff();												///< return true when the sound is off
 		
-		bool setSound(char* str);///< set sound to be played
-		void offSound();         ///< switch off the sound
-		bool isSoundOff();       ///< return true when the sound is off
-		
-	  bool keyPressed();     ///< returns true if a key was pressed
-    char keyRead();        ///< returns the last key pressed
-		
-		bool UARTavailableRX();        ///< get if char received (rx buffer)
-		bool UARTavailableTX();        ///< get if char to be sent (tx buffer)
-		byte UARTcountRX();            ///< get the amount of char received (rx buffer)
-		byte UARTwrite(const __FlashStringHelper*);    ///< write a string from flash to the UART
-		byte UARTwrite(char* data);    ///< write a string from flash to the UART
-		byte UARTwrite(char data);      ///< write a single char to the UART 
-    char UARTread();                ///< read a single char from the UART 
-		char UARTpeek();                ///< read a single char from the UART without extracting from the rx buffer
+		bool keyPressed();												///< returns true if a key was pressed
+		char keyRead();													///< returns the last unread key pressed
+		void UARTsetBaudrate(unsigned int baudrate);
+		bool UARTavailableRX();											///< get if char received (rx buffer)
+		bool UARTavailableTX();											///< get if char to be sent (tx buffer)
+		uint8_t UARTcountRX();											///< get the amount of char received (rx buffer)
+#ifndef ATMEL_STUDIO
+		uint8_t UARTwrite(const __FlashStringHelper*);					///< write a string from flash to the UART
+#endif
+		uint8_t UARTwrite(char* data);									///< write a string from flash to the UART
+		uint8_t UARTwrite(char data);									///< write a single char to the UART 
+		char UARTread();												///< read a single char from the UART 
+		char UARTpeek();												///< read a single char from the UART without extracting from the rx buffer
 
-		void ms_delay(unsigned int t); ///< wait function in milliseconds
-		unsigned long ms_elpased();     ///< returns the time elpased in milliseconds since the last reset
+		void ms_delay(unsigned int t);									///< wait function in milliseconds
+		unsigned long ms_elpased();										///< returns the time elapsed in milliseconds since the last reset
 		unsigned int getSWversion() {
 			unsigned int version = SW_version_mj;
 			version = (version << 8) + SW_version_mn;
 			return version;
 		}
 	private:
-		byte* pFont;
-		byte screenColor;
+		void setColor(uint8_t color, uint8_t mode);
+	private:
+		uint8_t* pFont;
+		uint8_t screenColor;
 };
 
-#ifdef PIXEL_HW_MUX
-// color 8 pixels by 8 pixels tile. Aligned to 512 to get the begin address higher the RAM
-// 4 double px width by 8 px height "R0,G0,B0,R1,G1,B1,x,x"
-const byte TileMemWidth = 4;  // halfed because double pix per byte
-const byte TileMemHeight = 8; // TileMemHeight needs to be a pow2.
-const byte TileMemSize = TileMemWidth*TileMemHeight;
-const byte PGMaddrH PROGMEM = 4; //((unsigned int)&Tile)>>8; // start at 0x400 because 512 aligned.
-
 // 8 px width by 8 px height per byte, the out sequence is MSB to LSB
-const byte coreTile[] __attribute__ ((aligned (0x400))) PROGMEM = {
+// for Graph mode (HwMux) or GraphPGM mode (no HwMux)
+const uint8_t coreTile4B[] PROGMEM = {
   // tile 0 (empty)
   0b00000000,0b00000000,0b00000000,0b00000000,
   0b00000000,0b00000000,0b00000000,0b00000000,
@@ -174,140 +210,328 @@ const byte coreTile[] __attribute__ ((aligned (0x400))) PROGMEM = {
   0b10011000,0b01001100,0b00110100,0b11100000
 }; 
 
+#ifdef PIXEL_HW_MUX
+// color 8 pixels by 8 pixels tile.
+// 4 double px width by 8 px height "R0,G0,B0,R1,G1,B1,x,x"
+const uint8_t TileMemWidth = 4;  // halved because double pix per byte
+const uint8_t TileMemHeight = 8; // TileMemHeight needs to be a pow2.
+const uint8_t TileMemSize = TileMemWidth*TileMemHeight;
+const uint8_t TileMemSize4B = TileMemWidth*TileMemHeight;
+
 #else
-// monochrome 8 pixels by 8 pixels tile. Aligned to 512 to get the begin address higher the RAM
-const byte TileMemWidth = 1;  // 1 byte for 8 pix
-const byte TileMemHeight = 8; // TileMemHeight needs to be a pow2.
-const byte TileMemSize = TileMemWidth*TileMemHeight;
+const uint8_t TileMemWidth = 2;  // 2 byte for 8 pix (monochrome 8 pixels by 8 pixels tile.)
+const uint8_t TileMemWidth4B = 4;  // 4 byte for 8 pix (8 colors PGM Tile only in GraphMode)
+const uint8_t TileMemHeight = 8; // TileMemHeight needs to be a pow2.
+const uint8_t TileMemSize = TileMemWidth*TileMemHeight;
+const uint8_t TileMemSize4B = TileMemWidth4B*TileMemHeight;
 
-const byte PGMaddrH PROGMEM = 4; //((unsigned int)&Tile)>>8; // start at 0x400 becase 512 aligned.
-
-// 8 px width by 8 px height per byte, mono red (sequence is bit7, bit6 ... bit2)
-const byte coreTileR[] __attribute__ ((aligned (512))) PROGMEM = {
+// 8 px width by 8 px height 2 bytes, 4 colors (RED|GREEN)
+// for Graph mode (no HwMux)
+const uint8_t coreTile2B[] __attribute__ ((aligned(32))) PROGMEM = {
   // tile 0 (empty)
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  // tile 1 (damier)
-  0b10101010,
-  0b01010101,
-  0b10101010,
-  0b01010101,
-  0b10101010,
-  0b01010101,
-  0b10101010,
-  0b01010101,
+  0b00000000, 0b00000000,
+  0b00000000, 0b00000000,
+  0b00000000, 0b00000000,
+  0b00000000, 0b00000000,
+  0b00000000, 0b00000000,
+  0b00000000, 0b00000000,
+  0b00000000, 0b00000000,
+  0b00000000, 0b00000000,
+  // tile 1 (checkboard)
+  0b01100110, 0b01100110,
+  0b10011001, 0b10011001,
+  0b01100110, 0b01100110,
+  0b10011001, 0b10011001,
+  0b01100110, 0b01100110,
+  0b10011001, 0b10011001,
+  0b01100110, 0b01100110,
+  0b10011001, 0b10011001,
   // tile 2 (square)
-  0b11111111,
-  0b10000001,
-  0b10000001,
-  0b10000001,
-  0b10000001,
-  0b10000001,
-  0b10000001,
-  0b11111111,
+  0b11111111, 0b11111111,
+  0b11000000, 0b00000011,
+  0b11000000, 0b00000011,
+  0b11000000, 0b00000011,
+  0b11000000, 0b00000011,
+  0b11000000, 0b00000011,
+  0b11000000, 0b00000011,
+  0b11111111, 0b11111111,
   // tile 3 (full)
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111
-};
-// 8 px width by 8 px height per byte, mono green (sequence is bit6, bit5 ... bit1)
-const byte coreTileG[] __attribute__ ((aligned (512))) PROGMEM = {
-  // tile 0 (empty)
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  // tile 1 (damier)
-  0b01010101,
-  0b10101010,
-  0b01010101,
-  0b10101010,
-  0b01010101,
-  0b10101010,
-  0b01010101,
-  0b10101010,
-  // tile 2 (square)
-  0b11111111,
-  0b11000000,
-  0b11000000,
-  0b11000000,
-  0b11000000,
-  0b11000000,
-  0b11000000,
-  0b11111111,
-  // tile 3 (full)
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111
+  0b11111111, 0b11111111,
+  0b11111111, 0b11111111,
+  0b11111111, 0b11111111,
+  0b11111111, 0b11111111,
+  0b11111111, 0b11111111,
+  0b11111111, 0b11111111,
+  0b11111111, 0b11111111,
+  0b11111111, 0b11111111
 };  
-
-// 8 px width by 8 px height per byte, mono blue  (sequence is bit5, bit4 ... bit0)
-const byte coreTileB[] __attribute__ ((aligned (512))) PROGMEM = {
-  // tile 0 (empty)
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  0b00000000,
-  // tile 1 (damier)
-  0b10101010,
-  0b01010101,
-  0b10101010,
-  0b01010101,
-  0b10101010,
-  0b01010101,
-  0b10101010,
-  0b01010101,
-  // tile 2 (square)
-  0b11111111,
-  0b01100000,
-  0b01100000,
-  0b01100000,
-  0b01100000,
-  0b01100000,
-  0b01100000,
-  0b11111111,
-  // tile 3 (full)
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111,
-  0b11111111
-};  
-
 //  end of APL tiles
 #endif
+
+// BASIC tone table: index = f/4, F in Hz
+const uint8_t BASIC_sound[] PROGMEM = {
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(255),
+scaling(243),
+scaling(229),
+scaling(216),
+scaling(205),
+scaling(194),
+scaling(185),
+scaling(177),
+scaling(169),
+scaling(162),
+scaling(155),
+scaling(149),
+scaling(144),
+scaling(139),
+scaling(134),
+scaling(129),
+scaling(125),
+scaling(121),
+scaling(117),
+scaling(114),
+scaling(111),
+scaling(108),
+scaling(105),
+scaling(102),
+scaling(99),
+scaling(97),
+scaling(94),
+scaling(92),
+scaling(90),
+scaling(88),
+scaling(86),
+scaling(84),
+scaling(82),
+scaling(80),
+scaling(79),
+scaling(77),
+scaling(76),
+scaling(74),
+scaling(73),
+scaling(71),
+scaling(70),
+scaling(69),
+scaling(68),
+scaling(66),
+scaling(65),
+scaling(64),
+scaling(63),
+scaling(62),
+scaling(61),
+scaling(60),
+scaling(59),
+scaling(58),
+scaling(57),
+scaling(56),
+scaling(56),
+scaling(55),
+scaling(54),
+scaling(53),
+scaling(53),
+scaling(52),
+scaling(51),
+scaling(50),
+scaling(50),
+scaling(49),
+scaling(48),
+scaling(48),
+scaling(47),
+scaling(47),
+scaling(46),
+scaling(46),
+scaling(45),
+scaling(44),
+scaling(44),
+scaling(43),
+scaling(43),
+scaling(42),
+scaling(42),
+scaling(41),
+scaling(41),
+scaling(41),
+scaling(40),
+scaling(40),
+scaling(39),
+scaling(39),
+scaling(38),
+scaling(38),
+scaling(38),
+scaling(37),
+scaling(37),
+scaling(37),
+scaling(36),
+scaling(36),
+scaling(36),
+scaling(35),
+scaling(35),
+scaling(35),
+scaling(34),
+scaling(34),
+scaling(34),
+scaling(33),
+scaling(33),
+scaling(33),
+scaling(32),
+scaling(32),
+scaling(32),
+scaling(32),
+scaling(31),
+scaling(31),
+scaling(31),
+scaling(31),
+scaling(30),
+scaling(30),
+scaling(30),
+scaling(30),
+scaling(29),
+scaling(29),
+scaling(29),
+scaling(29),
+scaling(28),
+scaling(28),
+scaling(28),
+scaling(28),
+scaling(28),
+scaling(27),
+scaling(27),
+scaling(27),
+scaling(27),
+scaling(27),
+scaling(26),
+scaling(26),
+scaling(26),
+scaling(26),
+scaling(26),
+scaling(25),
+scaling(25),
+scaling(25),
+scaling(25),
+scaling(25),
+scaling(25),
+scaling(24),
+scaling(24),
+scaling(24),
+scaling(24),
+scaling(24),
+scaling(24),
+scaling(23),
+scaling(23),
+scaling(23),
+scaling(23),
+scaling(23),
+scaling(23),
+scaling(23),
+scaling(22),
+scaling(22),
+scaling(22),
+scaling(22),
+scaling(22),
+scaling(22),
+scaling(22),
+scaling(21),
+scaling(21),
+scaling(21),
+scaling(21),
+scaling(21),
+scaling(21),
+scaling(21),
+scaling(21),
+scaling(20),
+scaling(20),
+scaling(20),
+scaling(20),
+scaling(20),
+scaling(20),
+scaling(20),
+scaling(20),
+scaling(20),
+scaling(19),
+scaling(19),
+scaling(19),
+scaling(19),
+scaling(19),
+scaling(19),
+scaling(19),
+scaling(19),
+scaling(19),
+scaling(19),
+scaling(18),
+scaling(18),
+scaling(18),
+scaling(18),
+scaling(18),
+scaling(18),
+scaling(18),
+scaling(18),
+scaling(18),
+scaling(18),
+scaling(18),
+scaling(17),
+scaling(17),
+scaling(17),
+scaling(17),
+scaling(17),
+scaling(17),
+scaling(17),
+scaling(17),
+scaling(17),
+scaling(17),
+scaling(17),
+scaling(17),
+scaling(16),
+scaling(16),
+scaling(16),
+scaling(16),
+scaling(16),
+scaling(16),
+scaling(16),
+scaling(16),
+scaling(16),
+scaling(16),
+scaling(16),
+scaling(16),
+scaling(16),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(15),
+scaling(14),
+scaling(14),
+scaling(14)
+};
 
 // tone format: 
 // the odd byte is the tone duration in n*31.746uS, (0: stop, 255: loop). 
 // The even byte value is "extclk/1024 /(2*frequency) - 1". @32MHz it's (255 -> 61Hz, 0 -> 15625Hz)
-const byte sound_mario[] PROGMEM = {
+const uint8_t sound_mario[] PROGMEM = {
 6	, scaling(	23	),
 9	, scaling(	0	),
 6	, scaling(	23	),
@@ -624,7 +848,7 @@ const byte sound_mario[] PROGMEM = {
 };
 
 // Arduino splash image in 20 tiles width by 20 tiles height (RRGGBBxx)
-const byte TILEimage[] __attribute__ ((aligned (512))) PROGMEM={
+const uint8_t TILEimage[] PROGMEM={
  // tile row 1, col 1
 	0b10011000, 0b01001100, 0b00110100, 0b11111100, 
 	0b11011100, 0b11111100, 0b11111100, 0b11111100, 

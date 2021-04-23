@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Atmel Studio Solution File, Format Version 11.00
+VisualStudioVersion = 14.0.23107.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{E66E83B9-2572-4076-B26E-6BE79FF3018A}") = "sokoban", "sokoban\sokoban.cppproj", "{1C9CBFE4-2A5B-44DE-918E-8B414FA2F975}"
+EndProject
+Project("{E66E83B9-2572-4076-B26E-6BE79FF3018A}") = "Pong", "Pong\pong.cppproj", "{1D53AC03-7F20-4917-ACD3-F214CF353E06}"
+EndProject
+Project("{E66E83B9-2572-4076-B26E-6BE79FF3018A}") = "font", "font\font.cppproj", "{3FE22074-9769-41F6-A318-FB5F1652CC10}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|AVR = Debug|AVR
+		Release|AVR = Release|AVR
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1C9CBFE4-2A5B-44DE-918E-8B414FA2F975}.Debug|AVR.ActiveCfg = Debug|AVR
+		{1C9CBFE4-2A5B-44DE-918E-8B414FA2F975}.Debug|AVR.Build.0 = Debug|AVR
+		{1C9CBFE4-2A5B-44DE-918E-8B414FA2F975}.Release|AVR.ActiveCfg = Release|AVR
+		{1C9CBFE4-2A5B-44DE-918E-8B414FA2F975}.Release|AVR.Build.0 = Release|AVR
+		{1D53AC03-7F20-4917-ACD3-F214CF353E06}.Debug|AVR.ActiveCfg = Debug|AVR
+		{1D53AC03-7F20-4917-ACD3-F214CF353E06}.Debug|AVR.Build.0 = Debug|AVR
+		{1D53AC03-7F20-4917-ACD3-F214CF353E06}.Release|AVR.ActiveCfg = Release|AVR
+		{1D53AC03-7F20-4917-ACD3-F214CF353E06}.Release|AVR.Build.0 = Release|AVR
+		{3FE22074-9769-41F6-A318-FB5F1652CC10}.Debug|AVR.ActiveCfg = Debug|AVR
+		{3FE22074-9769-41F6-A318-FB5F1652CC10}.Debug|AVR.Build.0 = Debug|AVR
+		{3FE22074-9769-41F6-A318-FB5F1652CC10}.Release|AVR.ActiveCfg = Release|AVR
+		{3FE22074-9769-41F6-A318-FB5F1652CC10}.Release|AVR.Build.0 = Release|AVR
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

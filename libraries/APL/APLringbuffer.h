@@ -2,7 +2,7 @@
 /*                                                                                                 */
 /* file:          Ringbuffer.h                                                                     */
 /*                                                                                                 */
-/* source:        2015-2020, written by Adrian Kundert (adrian.kundert@gmail.com)                  */
+/* source:        2015-2021, written by Adrian Kundert (adrian.kundert@gmail.com)                  */
 /*                                                                                                 */
 /* description:   Simple ring buffer for a sequenced serial.print()                                */
 /*                                                                                                 */
@@ -19,79 +19,173 @@
 #ifndef RINGBUFFER_H
 #define RINGBUFFER_H
 
-#include "Arduino.h"
+#ifndef ATMEL_STUDIO
+	#include "Arduino.h"
+#endif
 
-class RingBuffer {
+#pragma GCC optimize ("-O3") // speed optimization
+
+class RingBuffer16 {
 public:
-    RingBuffer() {
+    RingBuffer16() {
         Head = Tail = 0;        
     }   
- 		inline byte count() {
+ 	
+	inline uint8_t count() {
       char Count = Head - Tail;
-			if (Count < 0) Count = BufferSize - (Tail - Head);
-			return Count;
+		if (Count < 0) Count = BufferSize - (Tail - Head);
+		return Count;
     }
- 		bool available() {
-			return (Head != Tail) ? true: false;
+ 	
+	bool available() {
+		return (Head != Tail) ? true: false;
     } 
-		byte write(char* data) {
-        byte i=0;
-				byte h = (Head + 1) % BufferSize;
+	
+	uint8_t write(char* data) {
+        uint8_t i=0;
+		uint8_t h = (Head+1) & (BufferSize-1);
         while((data[i] != 0) && (h != Tail)) {
-						Buffer[Head] = data[i]; 
+			Buffer[Head] = data[i]; 
             Head = h;
-						h = (Head + 1) % BufferSize;
-						i++;						
+			h = (Head+1) & (BufferSize-1);
+			i++;						
         }
         return i; // return the written count
     }
- 		byte writeF(const byte* data) {
-        byte i=0;
-				byte h = (Head + 1) % BufferSize;
-				char* ptr = (char*)data;
+ 	
+	uint8_t writeF(const uint8_t* data) {
+        uint8_t i=0;
+		uint8_t h = (Head+1) & (BufferSize-1);
+		char* ptr = (char*)data;
         while((data[i] != 0) && (h != Tail)) {
-						Buffer[Head] = pgm_read_byte(ptr++); 
+			Buffer[Head] = pgm_read_byte(ptr++); 
             Head = h;
-						h = (Head + 1) % BufferSize;
+			h = (Head+1) & (BufferSize-1);
             i++;						
         }
         return i; // return the written count
     }
-    byte write(char data) {
-        byte i=0;
-				byte h = (Head + 1) % BufferSize;
+    
+	uint8_t write(char data) {
+        uint8_t i=0;
+		uint8_t h = (Head+1) & (BufferSize-1);
         if(h != Tail) {  // avoid to full completely for the subtraction Head - Tail
             Buffer[Head] = data;
             Head = h;
-					  i++;          
+		  i++;          
         }
         return i; // return the written count
     }
-		char read() {
+	
+	char read() {
         char retVal = 0;
         if (Tail != Head) {
-						retVal = Buffer[Tail];
-						Tail = (Tail + 1) % BufferSize;
+			retVal = Buffer[Tail];
+			Tail = (Tail+1) & (BufferSize-1);
         }        
         return retVal;
     }
- 		char readfast() {
+ 	
+	char readfast() {
         char retVal = Buffer[Tail];
-				Tail = (Tail + 1) % BufferSize;
+		Tail = (Tail+1) & (BufferSize-1);
         return retVal;
-		}    
-		char peek() {
+	}    
+	
+	char peek() {
         char retVal = 0;
-				if (Tail != Head) {
-						retVal = Buffer[Tail];
+		if (Tail != Head) {
+			retVal = Buffer[Tail];
         }            
         return retVal;
     }
 
-    static const byte BufferSize = 64;
+    static const uint8_t BufferSize = 16; // 2^n base required
 private:
-    volatile byte Head;
-    volatile byte Tail;    
+    volatile uint8_t Head;
+    volatile uint8_t Tail;    
+    volatile char Buffer[BufferSize];
+};
+
+class RingBuffer32 {
+public:
+    RingBuffer32() {
+        Head = Tail = 0;        
+    }   
+ 	
+	inline uint8_t count() {
+      char Count = Head - Tail;
+		if (Count < 0) Count = BufferSize - (Tail - Head);
+		return Count;
+    }
+ 	
+	bool available() {
+		return (Head != Tail) ? true: false;
+    } 
+	
+	uint8_t write(char* data) {
+        uint8_t i=0;
+		uint8_t h = (Head+1) & (BufferSize-1);
+        while((data[i] != 0) && (h != Tail)) {
+			Buffer[Head] = data[i]; 
+            Head = h;
+			h = (Head+1) & (BufferSize-1);
+			i++;						
+        }
+        return i; // return the written count
+    }
+ 	
+	uint8_t writeF(const uint8_t* data) {
+        uint8_t i=0;
+		uint8_t h = (Head+1) & (BufferSize-1);
+		char* ptr = (char*)data;
+        while((data[i] != 0) && (h != Tail)) {
+			Buffer[Head] = pgm_read_byte(ptr++); 
+            Head = h;
+			h = (Head+1) & (BufferSize-1);
+            i++;						
+        }
+        return i; // return the written count
+    }
+    
+	uint8_t write(char data) {
+        uint8_t i=0;
+		uint8_t h = (Head+1) & (BufferSize-1);
+        if(h != Tail) {  // avoid to full completely for the subtraction Head - Tail
+            Buffer[Head] = data;
+            Head = h;
+			i++;          
+        }
+        return i; // return the written count
+    }
+	
+	char read() {
+        char retVal = 0;
+        if (Tail != Head) {
+			retVal = Buffer[Tail];
+			Tail = (Tail+1) & (BufferSize-1);
+        }        
+        return retVal;
+    }
+ 	
+	char readfast() {
+        char retVal = Buffer[Tail];
+		Tail = (Tail+1) & (BufferSize-1);
+        return retVal;
+	}    
+	
+	char peek() {
+        char retVal = 0;
+		if (Tail != Head) {
+			retVal = Buffer[Tail];
+        }            
+        return retVal;
+    }
+
+    static const uint8_t BufferSize = 32;  // 2^n base required
+private:
+    volatile uint8_t Head;
+    volatile uint8_t Tail;    
     volatile char Buffer[BufferSize];
 };
 
