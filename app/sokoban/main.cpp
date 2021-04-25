@@ -4,7 +4,7 @@
 /*                                                                                                 */
 /* source:        2021, written by Adrian Kundert (adrian.kundert@gmail.com)                       */
 /*                                                                                                 */
-/* description:   Sokoban game (C++ application)                                                   */
+/* description:   Sokoban game (GNU C++ application)                                               */
 /*                                                                                                 */
 /* This library is free software; you can redistribute it and/or modify it under the terms of the  */
 /* GNU Lesser General Public License as published by the Free Software Foundation;                 */
@@ -24,7 +24,6 @@
 #ifdef ATMEL_STUDIO
 	#include <avr/pgmspace.h>
     #include <avr/io.h> 
-	#include <stdlib.h>
 #endif
 
 #pragma GCC optimize ("-O3") // speed optimization gives more deterministic behavior
@@ -76,21 +75,52 @@ void sendPgmString(unsigned char x, unsigned char y, const char* str) {
 	}
 }
 
-unsigned long timeOut;	// needs to be out of the main(). Don't know why.
-const char scoreBoard[] PROGMEM = {"01 PS:    MV:       "};
+#define stringSize 	4
+void printScoreboard(unsigned char* moveStr, unsigned char* pushStr) {
+	unsigned char n;
+	for (n = 0; n < stringSize-1; n++) {
+		if (moveStr[n] > '9') {
+			moveStr[n] = '0';
+			moveStr[n+1]++;
+		}
+	}	
+	for (n = 0; n < stringSize; n++) {
+		pAPL->setTileXY(n+5, 19, (unsigned char*)&PETtile4B[(unsigned int)TileMemSize4B * moveStr[stringSize-1-n]]);
+	}
+
+	for (n = 0; n < stringSize-1; n++) {
+		if (pushStr[n] > '9') {
+			pushStr[n] = '0';
+			pushStr[n+1]++;
+		}
+	}
+	for (n = 0; n < stringSize; n++) {
+		pAPL->setTileXY(n+15, 19, (unsigned char*)&PETtile4B[(unsigned int)TileMemSize4B * pushStr[stringSize-1-n]]);
+	}	
+}		
+		
+/***********************************************************************************************/
+//	main program
+/***********************************************************************************************/
+
+unsigned long timeOut;	// for unknown reason needs to be out of the main()
+const char gameLevel[] PROGMEM = {"LEVEL 01             "};
+const char scoreBoard[] PROGMEM = {"PUSH:     MOVE:     "};
 const char gameEnded[] PROGMEM = {"WELL DONE!"};
+
 int main() {
 	unsigned char map[MAP_SIZE];  //N.B. gcc takes less memory when not global!!!
 	enum MoveState {standing=0, push1=1, push2_empty=2, push2_box=3};
 	MoveState state = standing;
 	unsigned char xPos, yPos;
 	unsigned char key;
-	unsigned int push, move;	
+	unsigned char pushStr[stringSize];
+	unsigned char moveStr[stringSize];
 	bool undo = false;
 
 	initAPL();
 
-	timeOut = push = move = key = 0;
+	timeOut = key = 0;
 	xPos=12; yPos=11; heading = RIGHTARROW;
 	
 	// get the the ROM map
@@ -105,7 +135,12 @@ int main() {
 	updateMap(map, xPos, yPos, iMAN_STANDING);
 		
 	// init score board
-	sendPgmString(1, 19, scoreBoard);
+	sendPgmString(0, 0, gameLevel);
+	sendPgmString(0, 19, scoreBoard);
+	for (unsigned char x = 0; x < stringSize; x++) {
+		pushStr[x] = moveStr[x] = '0';
+	}
+	printScoreboard(moveStr, pushStr);
 	
 	while(1) {			
 		// keyboard handling		
@@ -269,7 +304,8 @@ int main() {
 				state = standing;	// stop moving
 				updateMap(map, xPos, yPos, iMAN_STANDING);				
 			}
-			move++; undo = false;
+			moveStr[0]++; printScoreboard(moveStr, pushStr);
+			undo = false;
 			break;
 		case push2_box:
 			if (key != 0) {
@@ -283,7 +319,7 @@ int main() {
 			unsigned int i = (unsigned int)nextyPos*SCREEN_SIZE_COL + nextxPos;
 			if (pgm_read_byte((unsigned char*)SOKOmap_L1 + i) == iSTORAGE) {
 				updateMap(map, nextxPos, nextyPos, iSTORED_BOX); // get back initial
-				// check if all boxes all stored
+				// check if all boxes are stored
 				unsigned int i = 0;
 				while ((i < MAP_SIZE) && (map[i] != iBOX)) { i++;};
 				if (i == MAP_SIZE) {
@@ -292,21 +328,9 @@ int main() {
 				}
 			}
 			else updateMap(map, nextxPos, nextyPos, iBOX);
-			move++; push++; undo = true;			
+			moveStr[0]++; pushStr[0]++; printScoreboard(moveStr, pushStr);
+			undo = true;			
 			break;
-		}
-		
-		// update the score board
-		{
-			char str[10];
-			itoa(push, str, 10);
-			for (unsigned char  index = 0; str[index]!=0; index++) {
-				pAPL->setTileXY(index+7, 19, (unsigned char*)&PETtile4B[(unsigned int)TileMemSize4B * (unsigned char)str[index]]);
-			}
-			itoa(move, str, 10);	
-			for (unsigned char  index = 0; str[index]!=0; index++) {
-				pAPL->setTileXY(index+14, 19, (unsigned char*)&PETtile4B[(unsigned int)TileMemSize4B * (unsigned char)str[index]]);
-			}
 		}
 	}
 }
