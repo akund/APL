@@ -22,7 +22,7 @@ The APL development begun with an hobbyst project having as goal to design a sin
 The APL is designed for Arduino software development environement. The hardware configuration is flexible from standart board like Arduino Uno or Nano,
 
 | Configuration | Pixel height)| Tile Resolution in Text mode (Pixel width) | Tile Resolution in GraphicPGM mode (Pixel width)| Tile Resolution in Graphic mode (Pixel width)|
-| --- | --- | --- | --- |
+| --- | --- | --- | --- | --- |
 | 32 MHz (experimental) | 160 | 29 (172) |  19 (152) | 17 (136) |
 | 24 MHz | 160 | 19 (114) | 13 (104) | 11 (88) |
 | 16 MHz (Uno/Nano) | 160 | 8 (48) | 6 (48) | 4 (32) |
@@ -48,7 +48,7 @@ but can also be customized with an higher system clock for better performance. A
 
 ## Sokoban (GraphicPGM mode)
 
-[<img width='50%' src='doc/sokoban_screen.jpg'/>](https://www.youtube.com/watch?v=OByLFN8f23E)
+[<img width='50%' src='doc/sokoban_screen.png'/>](https://www.youtube.com/watch?v=OByLFN8f23E)
 
 # Hardware Configuration
 
