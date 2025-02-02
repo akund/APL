@@ -2,7 +2,7 @@
 /*                                                                                                 */
 /* file:          APLcore.h                                                                        */
 /*                                                                                                 */
-/* source:        2018-2021, written by Adrian Kundert (adrian.kundert@gmail.com)                  */
+/* source:        2018-2020, written by Adrian Kundert (adrian.kundert@gmail.com)                  */
 /*                                                                                                 */
 /* description:   APL interrupt driven engine for VGA, Audio, UART and PS2 peripherals             */
 /*                                                                                                 */
@@ -22,18 +22,23 @@
 #ifdef ATMEL_STUDIO
 	#include <avr/pgmspace.h>
 	#include <avr/io.h>
-	#include <avr/interrupt.h>	
+	#include <avr/interrupt.h>
+	#include "config.h" // Hardware Config by the include or the defines below
 #else
 	#include "Arduino.h"
+	//================================ Hardware Config (begin) ========================================//
+	#define F_CPU 32000000UL  // system clock
+	#define PIXEL_HW_MUX      // this define enables the Pixel Hardware Mux
+	//#define NO_XSCROLLING		// use this define to disable the x scrolling feature in GraphMode (1 tile resolution could increased)
+	//================================ Hardware Config (end) ==========================================//
 #endif
 
-#include "config.h"				// Hardware Config
 #include "ps2keyboard.h"
 #include "APLringBuffer.h"
 
 // APL software version
 const uint8_t SW_version_mj = 2;
-const uint8_t SW_version_mn = 0;
+const uint8_t SW_version_mn = 2;
 
 #define scaling(a) (uint8_t)(F_CPU / 32000000.0 * a)
 
@@ -138,7 +143,9 @@ class APLcore
 		bool UARTavailableRX();											///< get if char received (rx buffer)
 		bool UARTavailableTX();											///< get if char to be sent (tx buffer)
 		uint8_t UARTcountRX();											///< get the amount of char received (rx buffer)
-#ifndef ATMEL_STUDIO
+#ifdef ATMEL_STUDIO
+		uint8_t UARTwrite(const char*);									///< write a string from flash to the UART
+#else
 		uint8_t UARTwrite(const __FlashStringHelper*);					///< write a string from flash to the UART
 #endif
 		uint8_t UARTwrite(char* data);									///< write a string from flash to the UART
@@ -148,6 +155,11 @@ class APLcore
 
 		void ms_delay(unsigned int t);									///< wait function in milliseconds
 		unsigned long ms_elpased();										///< returns the time elapsed in milliseconds since the last reset
+		
+		void setDate(unsigned char yy, unsigned char mm, unsigned char dd);
+		void setTime(unsigned char hh, unsigned char mm, unsigned char ss);
+		unsigned int GetDateF32(void);
+		unsigned int GetTimeF32(void);
 		unsigned int getSWversion() {
 			unsigned int version = SW_version_mj;
 			version = (version << 8) + SW_version_mn;

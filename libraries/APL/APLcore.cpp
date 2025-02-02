@@ -2,7 +2,7 @@
 /*                                                                                                 */
 /* file:          APLcore.cpp                                                                      */
 /*                                                                                                 */
-/* source:        2018-2021, written by Adrian Kundert (adrian.kundert@gmail.com)                  */
+/* source:        2018-2025, written by Adrian Kundert (adrian.kundert@gmail.com)                  */
 /*                                                                                                 */
 /* description:   APL interrupt driven engine for VGA, Audio, UART and PS2 peripherals             */
 /*                                                                                                 */
@@ -65,6 +65,7 @@ RingBuffer16 txbuffer;	// atomic queue
 RingBuffer32 rxbuffer;	// atomic queue
 
 volatile unsigned long ElaspsedTime = 0; // 32-bit counter in ms since last reset
+volatile unsigned char dateY, dateM, dateD, timeH, timeM, timeS, tick;
 //================================ Hardware Config (end) ==========================================//
 
 #ifdef PIXEL_HW_MUX
@@ -431,6 +432,35 @@ inline void VGArendering() {
 	);
 }
 #endif
+
+void _setDate(unsigned char yy, unsigned char mm, unsigned char dd) {
+	// increment when invalid
+	if ((dd > 31) && ((mm == 1) || (mm == 3) || (mm == 5) || (mm == 7) || (mm == 8) || (mm == 10) || (mm == 12))) { dd = 1; mm++;}
+	if ((dd > 30) && ((mm == 4) || (mm == 6) || (mm == 9) || (mm == 11))) { dd = 1; mm++;}
+	if ((dd > 29) && (mm == 2)) { dd = 1; mm++;}
+	if ((dd == 29) && (mm == 2)) {
+		unsigned int y = (unsigned int)yy + 1980;
+		if (((y/4)*4 == y) || (((y/400)*400 == y) && ((y/100)*100 != y)) ) dd = 29; // OK, it's a leap year
+		else { dd = 1; mm++;}
+	}
+	if (mm > 12) {mm = 1; yy++;}
+	if (yy > 127) yy = 1;
+	
+	do{
+		dateY = yy;	dateM = mm;	dateD = dd;	 // shadowing
+	}while( (dateY != yy) || (dateM != mm) || (dateD != dd) );
+}
+
+void _setTime(unsigned char hh, unsigned char mm, unsigned char ss) {
+	// increment when invalid
+	if (ss > 59) {ss = 0; mm++;}
+	if (mm > 59) {mm = 0; hh++;}
+	if (hh > 23) { hh = 0;	_setDate(dateY, dateM, dateD+1);}
+	
+	do{
+		timeH = hh;	timeM = mm;	timeS = ss;		 // shadowing
+	}while( (timeH != hh) || (timeM != mm) || (timeS != ss) );
+}
 	
 // ISR (Hsync pulse based) for the APL core
 ISR (TIMER1_OVF_vect) {
@@ -534,7 +564,13 @@ ISR (TIMER1_OVF_vect) {
 	
 		if (vLine == 3) {
 			PORTB &= 0xfb;  // VSYNC cleared
-			ElaspsedTime += 17; // 16.66 ms added (60Hz)			
+			ElaspsedTime += 17; // 16.66 ms added (60Hz)
+			if (++tick == 60) { // pseudo 60Hz for the second clock
+				//N.B. ICR1 value 126 gives a faster time clock: 2s/hr. ?? theoretically should be 0.01% slower? over clocking effect?
+				//ICR1 value 127 gives a slower time clock: 30s/hr ??
+				tick = 0;
+				_setTime(timeH, timeM, timeS+1);
+			}
 		}
 		if (++vLine == verticalBackPorchLines) {
 			vLineActive = 0;  // start pixel out at next call
@@ -626,6 +662,7 @@ ISR (TIMER1_OVF_vect) {
 
 APLcore::APLcore() {
 	VGAmode = Disabled;
+	dateY = timeH = timeM = timeS = 0; dateM = dateD = 1; // Jan 1st, 1981, 00hh00m00s
 }
 
 void APLcore::coreInit() {
@@ -649,7 +686,7 @@ void APLcore::coreInit() {
 	DDRB |= 0x02;  // HSYNC assigned PB1 (Arduino pin D9)
 	TCCR1A=bit(WGM11) | bit(COM1A1);
 	TCCR1B=bit(WGM12) | bit(WGM13) | bit(CS11); //8 prescaler
-	ICR1= 31.7F * F_CPU / 1000000 / 8UL - 1; //(period: 31.7 uS) * (FClk/8) - 1 = 62
+	ICR1=31.75F * F_CPU / 1000000 / 8UL - 1; //(period: 31.746 uS round-up to 31.75uS) * (FClk/8) - 1
 	OCR1A= 4 * F_CPU / 1000000 / 8UL - 1; //(tOn: 4 uS) * (FClk/8) - 1 = 7
 	TIFR1=bit(TOV1); //clear overflow flag
 	TIMSK1=bit(TOIE1); //interrupt on overflow on TIMER1
@@ -979,8 +1016,11 @@ uint8_t APLcore::UARTcountRX() {
 	return rxbuffer.count();
 }
 
-#ifndef ATMEL_STUDIO
+#ifdef ATMEL_STUDIO
+uint8_t APLcore::UARTwrite(const char* data) {
+#else
 uint8_t APLcore::UARTwrite(const __FlashStringHelper* data) {
+#endif
 	char str[2]; str[1]=0; 
 	char c;	char* ptr = (char*)data;
 	do {
@@ -989,7 +1029,6 @@ uint8_t APLcore::UARTwrite(const __FlashStringHelper* data) {
   } while(c != 0);
 	return 0;
 }
-#endif
 
 uint8_t APLcore::UARTwrite(char* data) {
 	return txbuffer.write(data);
@@ -1019,4 +1058,35 @@ unsigned long APLcore::ms_elpased() {
   while (t != ElaspsedTime) {t = ElaspsedTime;};
   return t;
 }
+
+void APLcore::setDate(unsigned char yy, unsigned char mm, unsigned char dd) {	
+	_setDate(yy, mm, dd);
+}
+
+void APLcore::setTime(unsigned char hh, unsigned char mm, unsigned char ss) {
+	_setTime(hh, mm, ss);
+}
+
+/****************************************************************************************
+                  Fat32 date and time encoding
+Bytes   Content
+0		Time (5/6/5 bits, for hour/minutes/doubleseconds)
+1		Date (7/4/5 bits, for year-since-1980/month/day)
+****************************************************************************************/
+unsigned int APLcore::GetDateF32(void) {
+	unsigned char yy, mm, dd;
+	do{
+		yy = dateY;	mm = dateM;	dd = dateD;  // shadowing
+	}while( (dateY != yy) || (dateM != mm) || (dateD != dd) );
+	return ((yy)<<9) | ((mm & 0x0f)<<5) | (dd & 0x1F);
+}
+
+unsigned int APLcore::GetTimeF32(void) {
+    unsigned char hh, mm, ss;
+	do{
+		hh= timeH;	mm = timeM;	ss = timeS;  // shadowing
+	}while( (timeH != hh) || (timeM != mm) || (timeS != ss) );	
+	return (hh << 11) | ((mm & 0x3f) << 5) | ((ss / 2) & 0x1F);	
+}
+
 #pragma GCC pop_options

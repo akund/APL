@@ -19,6 +19,9 @@
 #ifndef APLtile_h
 #define APLtile_h
 
+//--- PETSCII character Set ------------------------------------------------------------------------
+#ifdef PIXEL_HW_MUX
+
 const uint8_t PETtile4B[] PROGMEM = {
 	/* PET:00 */
 	0b00000000, 0b00011100, 0b11111100, 0b00000000,	/*    ???   */
@@ -1299,9 +1302,9 @@ const uint8_t PETtile4B[] PROGMEM = {
 	0b00000000, 0b00000000, 0b11111100, 0b11111100,	/*     ???? */
 	0b00000000, 0b00000000, 0b11111100, 0b11111100,	/*     ???? */
 	0b00000000, 0b00000000, 0b11111100, 0b11111100	/*     ???? */
-};  //  end of tileS
+};  //  end of tiles
 
-#ifndef PIXEL_HW_MUX
+#else
 
 const uint8_t PETtile2B[] PROGMEM = {		
 	/* PET:00 */
@@ -2588,6 +2591,6 @@ const uint8_t PETtile2B[] PROGMEM = {
 
 #endif
 
-
+//--------------------------------------------------------------------------------------------------
 
 #endif
