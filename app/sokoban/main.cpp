@@ -1,6 +1,6 @@
 /***************************************************************************************************/
 /*                                                                                                 */
-/* file:           main.cpp			                                                               */
+/* file:          main.cpp			                                                               */
 /*                                                                                                 */
 /* source:        2021, written by Adrian Kundert (adrian.kundert@gmail.com)                       */
 /*                                                                                                 */
@@ -16,17 +16,20 @@
 /*                                                                                                 */
 /***************************************************************************************************/
 
-
+#ifdef ATMEL_STUDIO
+	#include <avr/pgmspace.h>
+    #include <avr/io.h> 
+	#include <avr/boot.h>
+	#include <avr/interrupt.h>
+#endif
 #include "config.h"
 #include "APLcore.h"
 #include "APLtile.h"
 #include "sokoban_tile.h"
-#ifdef ATMEL_STUDIO
-	#include <avr/pgmspace.h>
-    #include <avr/io.h> 
-#endif
 
 #pragma GCC optimize ("-O3") // speed optimization gives more deterministic behavior
+
+BOOTLOADER_SECTION void boot_program_page(unsigned long int page, unsigned char *buf); // declared as unrewritable section
 
 //------------------------------------------------------ APL layer ----------------------------------------------------------------------------//
 APLcore INSTANCE;
@@ -105,7 +108,7 @@ void printScoreboard(unsigned char* moveStr, unsigned char* pushStr) {
 
 unsigned long timeOut;	// for unknown reason needs to be out of the main()
 const char gameLevel[] PROGMEM = {"LEVEL 01             "};
-const char scoreBoard[] PROGMEM = {"PUSH:     MOVE:     "};
+const char scoreBoard[] PROGMEM = {"MOVE:     PUSH:     "};
 const char gameEnded[] PROGMEM = {"WELL DONE!"};
 
 int main() {
@@ -153,6 +156,21 @@ int main() {
 			if((key == 'u') && (undo == true)) {
 				unsigned int i=0;
 				unsigned char tile=0;
+				
+				// Break data into pages
+				//for(int i = 0; i < 1024; i+= SPM_PAGESIZE) {
+					// Load data
+					uint8_t data[SPM_PAGESIZE];
+					for(int j = 0; j < SPM_PAGESIZE; j++) {						
+						data[j] = pgm_read_byte((unsigned char*)SOKOtile + j); // current value
+					}
+					for(int j = 32; j < 64; j++) {		// change wall tile to black				
+						data[j] = 0; // new value
+					}
+					
+					boot_program_page((uint32_t)SOKOtile, data); // the flash write blocks the APL engine (approx 1 sec VGA screen off)
+				//}
+				
 				switch(heading) {
 					case LEFTARROW :
 						updateMap(map, xPos+1, yPos, getMapTileIndex(map, xPos, yPos)); // move man						
@@ -334,3 +352,40 @@ int main() {
 		}
 	}
 }
+
+#pragma GCC push_options
+#pragma GCC optimize ("O0")		// otherwise the bootloader section is removed
+
+// avr/boot.h documentation example
+BOOTLOADER_SECTION void boot_program_page(uint32_t page, uint8_t *buf)
+{
+	uint16_t i;
+	uint8_t sreg;
+	// Disable interrupts.
+	sreg = SREG;
+	cli();
+	eeprom_busy_wait ();
+	boot_page_erase (page);
+	boot_spm_busy_wait (); // Wait until the memory is erased.
+	for (i=0; i<SPM_PAGESIZE; i+=2)
+	{
+		// Set up little-endian word.
+		uint16_t w = *buf++;
+		w += (*buf++) << 8;
+		boot_page_fill (page + i, w);
+	}
+	boot_page_write (page); // Store buffer in flash page.
+	boot_spm_busy_wait(); // Wait until the memory is written.
+	// Reenable RWW-section again. We need this if we want to jump back
+	// to the application after bootloading.
+	boot_rww_enable ();
+	sei();
+	// Re-enable interrupts (if they were ever enabled).
+	SREG = sreg;
+}
+// -- LSS file (assembled code)----------------------------------------------------
+//  Idx Name          Size      VMA       LMA       File off  Algn
+//  1 .bootloader   00000144  00007e00  00007e00  00005076  2**0
+// --------------------------------------------------------------------------------
+// a 256 bytes bootloader is sufficient
+#pragma GCC pop_options
