@@ -1,7 +1,4 @@
-# APL v2.0 – Arduino Peripheral Library
-
-COPYRIGHT (C) 2018-2021 Adrian Kundert  
-[adrian.kundert@gmail.com](mailto:adrian.kundert@gmail.com)  
+# APL v2.2 – Arduino Peripheral Library
 
 # Introduction:
 
@@ -17,7 +14,7 @@ The APL development begun with an hobbyst project having as goal to design a sin
 - Optional hardware pixel multiplexer for RGB capability
 - [PS/2 keyboard](https://www.arduinolibraries.info/libraries/ps2-keyboard) support
 - Sound Tone from 45 Hz to 12 KHz
-- SD card interface (TBD)
+- Time Clock
 
 The APL is designed for Arduino software development environement. The hardware configuration is flexible from standart board like Arduino Uno or Nano,
 
